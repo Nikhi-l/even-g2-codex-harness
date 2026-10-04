@@ -1,0 +1,28 @@
+services:
+  harness:
+    build: .
+    restart: unless-stopped
+    environment:
+      G2_HARNESS_ORIGIN: ${G2_HARNESS_ORIGIN:?Set the full HTTPS origin}
+      G2_HARNESS_TOKEN: ${G2_HARNESS_TOKEN:?Set a random secret token}
+      G2_HARNESS_ALLOWED_ORIGINS: ${G2_HARNESS_ALLOWED_ORIGINS:-}
+    expose: ["8787"]
+    read_only: true
+    tmpfs:
+      - /app/.local:uid=1000,gid=1000,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [harness]
+    ports: ["80:80", "443:443"]
+    environment:
+      G2_HARNESS_DOMAIN: ${G2_HARNESS_DOMAIN:?Set your hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:

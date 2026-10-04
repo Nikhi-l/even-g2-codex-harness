@@ -1,0 +1,43 @@
+{
+  "name": "even-g2-codex-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first Codex MCP harness with deterministic artifacts and an Even G2 adapter.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run build && npm start",
+    "start": "node dist/server/main.js",
+    "mcp": "node dist/server/mcp.js",
+    "build": "tsc -p tsconfig.build.json && vite build && node scripts/copy-notices.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests scripts",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run audit:files",
+    "audit:files": "node scripts/audit-public.mjs",
+    "demo": "vite --host 127.0.0.1",
+    "pack:g2": "npm run build && evenhub pack app.json dist/web --sdk-ver 0.0.14 -o even-g2-harness.ehpk",
+    "qr:g2": "evenhub qr --http --port 8787",
+    "package:hosted": "node scripts/package-hosted.mjs"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "0.0.14",
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@evenrealities/evenhub-cli": "0.1.14",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.19.7",
+    "eslint": "10.12.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.0",
+    "vite": "8.3.2",
+    "vitest": "5.0.3"
+  }
+}

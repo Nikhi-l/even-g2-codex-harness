@@ -1,0 +1,46 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm audit --audit-level=high
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - run: npm run pack:g2
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-results-node-${{ matrix.node }}
+          path: test-results/
+          retention-days: 3
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t g2-harness:test .
+      - name: Check private container health and authentication
+        run: |
+          docker run -d --name g2-harness-test -p 127.0.0.1:8787:8787 -e G2_HARNESS_ORIGIN=http://127.0.0.1:8787 -e G2_HARNESS_TOKEN=ci-only-container-token-00000000000000 g2-harness:test
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8787/health; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8787/health
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/api/state)" = 401
+          curl --fail --silent -H 'Authorization: Bearer ci-only-container-token-00000000000000' http://127.0.0.1:8787/api/state
+      - if: always()
+        run: docker rm -f g2-harness-test || true

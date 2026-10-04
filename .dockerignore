@@ -1,0 +1,12 @@
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+!vite.config.ts
+!src/
+!src/**
+!scripts/
+!scripts/copy-notices.mjs
+!THIRD_PARTY_NOTICES.md
+!Dockerfile

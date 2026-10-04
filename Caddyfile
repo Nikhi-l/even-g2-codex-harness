@@ -1,0 +1,10 @@
+{$G2_HARNESS_DOMAIN} {
+  # HTTPS certificates are managed by Caddy. Keep port 8787 private.
+  request_body {
+    max_size 16KB
+  }
+  reverse_proxy harness:8787 {
+    # Keep the original hostname so the relay's host allowlist can validate it.
+    header_up Host {host}
+  }
+}

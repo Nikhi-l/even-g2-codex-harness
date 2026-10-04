@@ -1,0 +1,9 @@
+# Substitute the absolute checkout path. Start the relay separately.
+[mcp_servers.even-g2]
+command = "node"
+args = ["/absolute/path/to/even-g2-codex-harness/dist/server/mcp.js"]
+
+# Hosted alternative; uncomment and provide the secret in Codex's environment.
+# [mcp_servers.even-g2-hosted]
+# url = "https://glasses.example.com/mcp"
+# bearer_token_env_var = "G2_HARNESS_TOKEN"

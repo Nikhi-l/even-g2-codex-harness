@@ -18,8 +18,10 @@ The actual application was inspected in the Codex in-app browser at desktop widt
 
 Visual checks covered original template geometry and labels, split-pane arrangement, text clipping/scroll affordances, green/cyan template palette, form/editor typography, and phone layout. Template truncation follows the preserved compact renderer. Browser native-answer typography is explicitly approximate. No fabricated through-lens image or customer asset is used.
 
-A five-case Playwright regression suite is included for gallery pixels, interaction/editor/clear behavior, authenticated relay connection/receipt and token URL removal, mobile overflow, and unavailable-bridge messaging. GitHub Actions runs this after clean installation on Node 22 and 24. Consult the actual workflow run for the published commit rather than assuming an earlier run applies.
+A five-case Playwright regression suite is included for gallery pixels, interaction/editor/clear behavior, authenticated relay connection/receipt and token URL removal, mobile overflow, and unavailable-device messaging. GitHub Actions runs this after clean installation on Node 22 and 24. Consult the actual workflow run for the published commit rather than assuming an earlier run applies.
 
 ## Remaining external validation
 
-The local Docker client was available, but its daemon was not running. Container build/runtime was therefore not verified locally; a container smoke job is included in CI. Server/domain deployment, Even Hub upload/install, physical G2 rendering/input, BLE latency, background behavior, and optics remain user-run acceptance work in [EVEN_HUB.md](EVEN_HUB.md). A browser render or successful SDK mock is not hardware evidence.
+The local Docker client was available, but its daemon was not running. Container build/runtime was therefore not verified locally. The published CI run successfully built the container and checked health, missing-token rejection, and authenticated state access. Server/domain deployment, Even Hub upload/install, physical G2 rendering/input, BLE latency, background behavior, and optics remain user-run acceptance work in [EVEN_HUB.md](EVEN_HUB.md). A browser render or successful SDK mock is not hardware evidence.
+
+CI initially exposed that the SDK can return a browser bridge shim whose page creation rejects, rather than waiting for a native bridge. The browser regression test now covers both unavailable-device paths and asserts that neither reports bridge acceptance.

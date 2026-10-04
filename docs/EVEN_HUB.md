@@ -24,7 +24,7 @@ Replace both placeholders with your own values. The script builds the app, write
 
 Review the generated manifest and package contents. Use your existing Even Hub developer account's current upload/test-group workflow to install it. Developer account approval, package-ID availability, app review and store publication are external steps, not completed by this repository. Follow [official Even Hub portal](https://hub.evenrealities.com/) and current portal requirements; do not claim an app is published merely because packaging succeeded.
 
-In the Even app, pair/connect G2 using its normal controls, open the harness, connect to the private relay with the runtime token, then press **Connect Even Hub**. This task does not change device firmware or account settings. The button times out with a clear message in ordinary browsers rather than pretending they have a device bridge.
+In the Even app, pair/connect G2 using its normal controls, open the harness, connect to the private relay with the runtime token, then press **Connect Even Hub**. This task does not change device firmware or account settings. An ordinary browser reports bridge absence or rejected page creation (the SDK may provide a non-native shim). Neither path reports successful device delivery.
 
 ## Simulator versus preview
 

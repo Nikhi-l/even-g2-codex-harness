@@ -55,8 +55,9 @@ test('phone layout has no horizontal page overflow', async ({ page }) => {
  await expect(page.getByRole('button',{name:'Show artifact',exact:true})).toBeVisible();
 });
 
-test('ordinary browser reports an unavailable Even bridge', async ({ page }) => {
+test('ordinary browser never reports device delivery', async ({ page }) => {
  await page.goto('/'); await page.getByRole('button',{name:'Connect Even Hub',exact:true}).click();
- await expect(page.locator('#message')).toContainText('Even Hub bridge not found', {timeout:10000});
- await expect(page.locator('#adapter-status')).toHaveText('Browser preview');
+ await expect(page.locator('#message')).toContainText(/Even Hub bridge not found|Page creation rejected/, {timeout:10000});
+ await expect(page.locator('#adapter-status')).toHaveText(/Browser preview|Failed · reopen Even Hub/);
+ await expect(page.locator('#delivery-label')).not.toContainText('Bridge accepted');
 });

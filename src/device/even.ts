@@ -9,7 +9,7 @@ import type { DisplayAdapter, InputType, Receipt } from './adapter.js';
 import { encodeTiles } from './tiles.js';
 
 export const CONTAINER = { containerID: 1, containerName: 'g2-artifact' } as const;
-export type Bridge = Pick<EvenAppBridge, 'createStartUpPageContainer' | 'rebuildPageContainer' | 'textContainerUpgrade' | 'updateImageRawData' | 'onEvenHubEvent'>;
+export type Bridge = Pick<EvenAppBridge, 'createStartUpPageContainer' | 'rebuildPageContainer' | 'textContainerUpgrade' | 'updateImageRawData' | 'onEvenHubEvent' | 'shutDownPageContainer' | 'getLocalStorage' | 'setLocalStorage'>;
 export function normalizeInput(event: EvenHubEvent): InputType | null {
   // Protobuf may omit zero-valued CLICK_EVENT. Only default within a real envelope.
   const payload = event.textEvent ?? event.sysEvent;
@@ -37,18 +37,65 @@ export class EvenAdapter implements DisplayAdapter {
   private previousText = '';
   private previousTileSignature = '';
   private disposed = false;
+  private operation: Promise<unknown> = Promise.resolve();
+  private exitPending = false;
   private unsubscribe: () => void;
   constructor(private bridge: Bridge, onInput: (type: InputType) => void, diagnostic: (message: string) => void = () => {}, private timeoutMs = 8000,
-    private tiles = encodeTiles) {
+    private tiles = encodeTiles, private failure: (error: Error) => void = () => {}) {
     this.unsubscribe = bridge.onEvenHubEvent(event => {
       // Log event shape/type only: audio and arbitrary raw payloads never leave this boundary.
       const envelope = event.textEvent ? 'text' : event.sysEvent ? 'system' : 'other';
       diagnostic(`${envelope} event ${event.textEvent?.eventType ?? event.sysEvent?.eventType ?? 'omitted'}`);
       const input = normalizeInput(event);
-      if (!this.disposed && input) onInput(input);
+      if (this.disposed || this.exitPending || !input) return;
+      if (input === 'back') void this.requestSystemExit().catch(error => this.failure(error instanceof Error ? error : new Error('Exit failed')));
+      else onInput(input);
     });
   }
-  async render(frame: DisplayFrame): Promise<Receipt> {
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.operation.then(operation);
+    this.operation = next.catch(() => {});
+    return next;
+  }
+  /** The host owns the confirmation dialog and closes its WebView after confirmation. */
+  async requestSystemExit(): Promise<void> {
+    if (this.exitPending) return;
+    this.exitPending = true;
+    try {
+      await this.serialize(async () => {
+        if (this.disposed || !this.ready) throw new Error('Display is not ready for exit; reopen the Even Hub app');
+        const accepted = await timeout(this.bridge.shutDownPageContainer(1), this.timeoutMs, 'Exit request timed out. Reopen the Even Hub app.');
+        if (accepted !== true) throw new Error('System exit dialog rejected. Reopen the Even Hub app.');
+      });
+    } catch (error) { this.dispose(); throw error; }
+    finally { this.exitPending = false; }
+  }
+  private setting<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.exitPending) return Promise.reject(new Error('System exit is pending; phone settings cannot change'));
+    return this.serialize(async () => {
+      if (this.disposed) throw new Error('Adapter closed; reopen the Even Hub app');
+      try { return await operation(); }
+      catch (error) {
+        // Storage calls also cannot be cancelled. Do not overlap a timed-out SDK call.
+        this.dispose();
+        this.failure(error instanceof Error ? error : new Error('Phone settings failed'));
+        throw error;
+      }
+    });
+  }
+  readSetting(key: string) {
+    return this.setting(() => timeout(this.bridge.getLocalStorage(key), this.timeoutMs, 'Could not restore phone settings. Reopen the Even Hub app.'));
+  }
+  writeSetting(key: string, value: string) {
+    return this.setting(async () => {
+      const accepted = await timeout(this.bridge.setLocalStorage(key, value), this.timeoutMs, 'Could not save phone settings. Reopen the Even Hub app.');
+      if (accepted !== true) throw new Error('Phone settings were not saved');
+    });
+  }
+  render(frame: DisplayFrame): Promise<Receipt> {
+    return this.serialize(() => this.renderFrame(frame));
+  }
+  private async renderFrame(frame: DisplayFrame): Promise<Receipt> {
     if (this.disposed) throw new Error('Adapter closed; reopen the Even Hub app');
     // One compact text container stays comfortably below startup's 1000-character limit.
     if (frame.text.length > 900) throw new Error('Display frame exceeds safe text budget');
@@ -107,7 +154,7 @@ export class EvenAdapter implements DisplayAdapter {
   }
   dispose() { if (!this.disposed) this.unsubscribe(); this.disposed = true; }
 }
-export async function connectEven(onInput: (type: InputType) => void, diagnostic: (message: string) => void) {
+export async function connectEven(onInput: (type: InputType) => void, diagnostic: (message: string) => void, failure: (error: Error) => void = () => {}) {
   const bridge = await timeout(waitForEvenAppBridge(), 5000, 'Even Hub bridge not found. Open this app inside Even Hub or use Preview.');
-  return new EvenAdapter(bridge, onInput, diagnostic);
+  return new EvenAdapter(bridge, onInput, diagnostic, 8000, encodeTiles, failure);
 }

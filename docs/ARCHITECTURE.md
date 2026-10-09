@@ -14,7 +14,7 @@ sequenceDiagram
   participant P as Phone/preview
   participant E as Even Hub SDK
   participant G as G2
-  C->>R: show_artifact(artifact, expectedRevision?)
+  C->>R: show_artifact(artifact, expectedSessionId?, expectedRevision?)
   R->>S: Validate discriminated template schema
   S-->>R: Snapshot + revision + expiry
   R-->>C: Accepted state (not a render promise)
@@ -30,7 +30,7 @@ sequenceDiagram
   E->>P: textEvent or sysEvent
   P->>R: Normalized input + visible revision
   R->>S: Validate, deduplicate, transition
-  C->>R: display_events(after)
+  C->>R: display_events(after, expectedSessionId?)
   R-->>C: Bounded event journal + cursor
 ```
 
@@ -47,15 +47,17 @@ sequenceDiagram
 | `src/device/adapter.ts` | Adapter contract and latest-state serial queue | Overlap writes or retry an unresolved timeout |
 | `src/server/http.ts` | Auth, allowed origins/hosts, request bounds, REST/MCP | Serve files outside built web root |
 | `src/server/mcp-tools.ts` | MCP schemas and bounded relay calls | Execute model-generated code |
-| `src/web/` | Phone console, demo, editor, gallery, runtime connection | Bundle or persist bearer tokens |
+| `src/controller/` | Explicit guarded MCP writes, event observation, synthetic example | Start model turns, treat input as permission, retry uncertain writes |
+| `src/web/` | Phone console, demo, editor, gallery, opt-in runtime connection | Bundle bearer tokens or persist artifact content |
+| `src/device/settings.ts` | Validate optional phone settings against the exact packaged HTTPS origin | Fetch arbitrary origins or store artifact/input history |
 
 ## Artifact lifecycle and input
 
 An artifact has a stable `id`, a registered `template`, validated `data`, an answer, and a 10–3600 second TTL. Publishing replaces the same ID, increments its version, selects it, resets scroll, and opens the split layout. At most 20 artifacts remain in memory; callers delete old items when full. No automatic eviction of a currently visible artifact occurs.
 
-Every display transition increments a relay revision. Optional `expectedRevision` prevents stale model writes. Inputs and delivery receipts require both the current session UUID and revision. Input IDs are deduplicated in a bounded 256-entry window. A restart gives a new session UUID and empty state; old inputs cannot operate on a new session with a coincidentally equal revision.
+Every display transition increments a relay revision. Optional `expectedSessionId` and `expectedRevision` together prevent stale agent writes across state changes and relay restarts. The controller always sends both; omitting them preserves compatibility for older clients but provides no stale-write protection. Inputs and delivery receipts require both the current session UUID and revision. Input IDs are deduplicated in a bounded 256-entry window. A restart gives a new session UUID and empty state; old inputs cannot operate on a new session with a coincidentally equal revision.
 
-Scroll moves one list/schedule/thumbnail row at a time. Other artifact templates remain fixed. Tap toggles split/full-answer layout; double tap closes the artifact. Full-answer scroll pages wrapped text. These operations never run a tool, shell command, or model turn. `display_events` retains 100 lifecycle/input events and reports cursor truncation.
+Scroll moves one list/schedule/thumbnail row at a time. Other artifact templates remain fixed. Tap toggles split/full-answer layout. Browser/REST `back` closes the artifact pane and retains `inputType: back` in the journal. Native G2 double tap is intercepted by the phone adapter and invokes `shutDownPageContainer(1)` after pending SDK operations, requesting the host-owned system exit dialog. That native exit is not a relay navigation event or proof that the host closed the WebView. Full-answer scroll pages wrapped text. These operations never run a tool, shell command, or model turn. `display_events` retains 100 lifecycle/input events, returns the session UUID and optional original `inputType`, and reports cursor truncation. An optional expected-session guard rejects a cursor belonging to another relay lifetime. Observers must refresh/rebaseline after a restart or journal truncation; missing input is never replayed as permission.
 
 Clear blanks the surface while retaining unexpired artifacts. Delete removes an artifact and blanks it if active. Expiration removes content on the relay and the client also checks expiry. Network loss triggers an attempted blank after ten seconds. A suspended phone, disconnected Bluetooth link, or already failed SDK cannot guarantee immediate clearing: close the app/device display manually if needed.
 
@@ -67,7 +69,7 @@ Split mode uses one 288×288 native text container and two 288×144 PNG image co
 
 Startup must return `StartUpPageCreateResult.success` (0). An invalid startup result is an error, not evidence of an existing usable surface. Layout changes use `rebuildPageContainer`; switching artifact templates with the same shape does not rebuild. Appended answer text uses an offset/tail update, while rewrites pad to clear the old tail. Artifact data or scroll changes regenerate the two tiles; answer-only changes skip images.
 
-Every SDK operation is awaited. A single queue coalesces pending revisions to the latest snapshot. Image results are normalized with the official SDK helpers. A rejected call or eight-second timeout stops the adapter, unsubscribes events, and asks the wearer to reopen Even Hub. Timed-out SDK work cannot be cancelled; automatic overlapping retries would make state unknowable. Reopening establishes a fresh surface.
+Every SDK operation is awaited. Rendering, system exit, and phone setting reads/writes share one serialized operation chain. A setting timeout also closes the adapter because the unresolved SDK call cannot be cancelled. A single queue coalesces pending revisions to the latest snapshot. Image results are normalized with the official SDK helpers. A rejected call or eight-second timeout stops the adapter, unsubscribes events, and asks the wearer to reopen Even Hub. Timed-out SDK work cannot be cancelled; automatic overlapping retries would make state unknowable. Reopening establishes a fresh surface.
 
 The seven template draw functions are deterministic given explicit data, loaded bundled assets, scroll, and the browser's font metrics. The calendar requires an explicit month. Preview fonts and color are approximations of the device. The SDK receives grayscale-quantized PNGs; canvas UI is not an optical simulator.
 
@@ -82,7 +84,7 @@ Receipts are self-reports from a trusted token holder, not cryptographic device 
 
 ## Security and hosting
 
-The default binds loopback. LAN/public binding requires an explicit origin, long bearer token, and `G2_HARNESS_ALLOW_LAN=1`. HTTPS terminates at the reverse proxy. REST and MCP share the same authorization boundary; the browser holds the token in memory. Origins and hosts are allowlisted; request bodies are limited to 16 KiB. Images resolve only through bundled aliases. No user file reads, URL proxy, scripts, audio, or provider key are exposed.
+The default binds loopback. LAN/public binding requires an explicit origin, long bearer token, and `G2_HARNESS_ALLOW_LAN=1`. HTTPS terminates at the reverse proxy. REST and MCP share the same authorization boundary; the browser holds the token in memory by default. A packaged phone app can explicitly remember its exact HTTPS relay origin and token through SDK local storage; this is not a hardware keystore. The default checkbox is unchecked, and Forget removes only the stored value while the current session stays connected. Artifact state and input history remain memory-only. Origins and hosts are allowlisted; request bodies are limited to 16 KiB. Images resolve only through bundled aliases. No user file reads, URL proxy, scripts, audio, or provider key are exposed.
 
 Each deployed relay is a single private namespace for one wearer. Multiple HTTP clients holding its token intentionally share that namespace. Deploy a separate container, secret, and hostname for each wearer. This release is not a multi-tenant service or an identity provider. See [HOSTING.md](HOSTING.md).
 

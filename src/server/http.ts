@@ -10,7 +10,7 @@ import { makeMcpServer } from './mcp-tools.js';
 
 interface Options { token: string; origins: string[]; webRoot?: string; store?: StateStore }
 const revision = z.number().int().nonnegative().optional();
-const expectedSchema = z.strictObject({ expectedRevision: revision });
+const expectedSchema = z.strictObject({ expectedRevision: revision, expectedSessionId: z.string().uuid().optional() });
 const selectSchema = expectedSchema.extend({ id: idSchema });
 const publishSchema = expectedSchema.extend({ artifact: z.unknown() });
 const MAX_BODY = 16_384;
@@ -85,28 +85,30 @@ export function createHarnessServer(options: Options) {
       if (method === 'GET' && path === '/api/state') { json(response, 200, store.snapshot()); return; }
       if (method === 'GET' && path === '/api/capabilities') { json(response, 200, CAPABILITIES); return; }
       if (method === 'GET' && path === '/api/events') {
-        const after = z.coerce.number().int().min(0).parse(new URL(request.url!, 'http://localhost').searchParams.get('after') ?? 0);
-        json(response, 200, store.events(after)); return;
+        const query = new URL(request.url!, 'http://localhost').searchParams;
+        const after = z.coerce.number().int().min(0).parse(query.get('after') ?? 0);
+        const expectedSessionId = z.string().uuid().optional().parse(query.get('expectedSessionId') ?? undefined);
+        json(response, 200, store.events(after, expectedSessionId)); return;
       }
       if (method === 'POST' && path === '/api/artifacts') {
         const data = publishSchema.parse(await body(request));
-        json(response, 200, store.upsert(data.artifact, data.expectedRevision)); return;
+        json(response, 200, store.upsert(data.artifact, data.expectedRevision, data.expectedSessionId)); return;
       }
       if (method === 'POST' && path === '/api/select') {
         const data = selectSchema.parse(await body(request));
-        json(response, 200, store.select(data.id, data.expectedRevision)); return;
+        json(response, 200, store.select(data.id, data.expectedRevision, data.expectedSessionId)); return;
       }
       if (method === 'POST' && path === '/api/layout') {
         const data = expectedSchema.extend({ layout: layoutSchema }).parse(await body(request));
-        json(response, 200, store.setLayout(data.layout, data.expectedRevision)); return;
+        json(response, 200, store.setLayout(data.layout, data.expectedRevision, data.expectedSessionId)); return;
       }
       if (method === 'POST' && path === '/api/clear') {
         const data = expectedSchema.parse(await body(request));
-        json(response, 200, store.clear(data.expectedRevision)); return;
+        json(response, 200, store.clear(data.expectedRevision, data.expectedSessionId)); return;
       }
       if (method === 'DELETE' && path === '/api/artifacts') {
         const data = selectSchema.parse(await body(request));
-        json(response, 200, store.remove(data.id, data.expectedRevision)); return;
+        json(response, 200, store.remove(data.id, data.expectedRevision, data.expectedSessionId)); return;
       }
       if (method === 'POST' && path === '/api/input') { json(response, 200, store.input(await body(request))); return; }
       if (method === 'POST' && path === '/api/delivery') { json(response, 200, store.acknowledge(await body(request))); return; }

@@ -22,6 +22,22 @@ describe('artifact registry and validation', () => {
  });
 });
 describe('state and artifact lifecycle', () => {
+ it('rejects cross-session writes even when a restarted relay has the same revision', () => {
+  const old = new StateStore(); const store = new StateStore(); const state = store.upsert(examples[0]!);
+  const foreign = old.sessionId;
+  const operations = [() => store.upsert(examples[1]!, state.revision, foreign), () => store.select(examples[0]!.id, state.revision, foreign),
+   () => store.clear(state.revision, foreign), () => store.remove(examples[0]!.id, state.revision, foreign), () => store.setLayout('answer', state.revision, foreign)];
+  for (const operation of operations) expect(operation).toThrow('session changed');
+  expect(store.snapshot()).toEqual(state); expect(() => store.events(0, foreign)).toThrow('session changed');
+ });
+ it('retains original gestures and checks session before duplicate input IDs', () => {
+  const store = new StateStore(); let state = store.upsert(examples[0]!);
+  const event = { type: 'next', eventId: 'shared-id', sessionId: state.sessionId, revision: state.revision };
+  state = store.input(event); expect(store.input(event).revision).toBe(state.revision);
+  expect(() => store.input({ ...event, sessionId: new StateStore().sessionId })).toThrow('session changed');
+  for (const type of ['previous', 'select', 'back'] as const) state = store.input({type,eventId:`input-${type}`,sessionId:state.sessionId,revision:state.revision});
+  expect(store.events(1, state.sessionId).events.map(event => event.inputType)).toEqual(['next','previous','select','back']);
+ });
  it('supports publish, replace, select, layout, clear, delete without exposing mutable state', () => {
   const store = new StateStore(); let state = store.upsert(examples[0]);
   expect(state.frame.layout).toBe('split');

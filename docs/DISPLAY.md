@@ -54,7 +54,7 @@ The 2026-10-10 run: 25 artifacts, 50 glasses screens, no overflow.
 
 ## Hardware questions
 
-Record the answers in VERIFICATION.md when a G2 is available:
+The pages in [tools/calibrate](../tools/calibrate/README.md) reproduce every measurement above; open them on the glasses with `evenhub qr`. Record the answers in VERIFICATION.md when a G2 is available:
 
 - Does the device font match the simulator's advances and 27 px pitch? Photograph the worst-case list answer.
 - Does `textContainerUpgrade` replace the text or overwrite in place? Send a long text, then a shorter one, and look for a stale tail.

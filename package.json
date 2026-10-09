@@ -27,6 +27,7 @@
     "claude:setup": "node scripts/claude-setup.mjs",
     "smoke:simulator": "node scripts/simulator-smoke.mjs test-results/simulator --stress",
     "capture:gallery": "node scripts/capture-gallery.mjs",
+    "calibrate": "vite --config tools/calibrate/vite.config.mjs",
     "check:sites": "npm --prefix packages/sites-mcp run check"
   },
   "dependencies": {

@@ -14,7 +14,7 @@ A standalone, open-source artifact display layer for **Even Realities G2**. Give
 - The original **seven artifact templates**: list, schedule, image, image grid, thumbnail list, card, and calendar.
 - A 576 × 288 split surface: native answer text on the left, a 288 × 288 canvas artifact on the right, encoded as two 288 × 144 image tiles.
 - Stable page structure, incremental answer updates, changed-artifact rendering, scroll, and open/close layout controls.
-- Authenticated **stdio and Streamable HTTP MCP**, strict template schemas, revision checks, expiry, bounded input history, and delivery receipts.
+- Authenticated **stdio and Streamable HTTP MCP**, strict template schemas, session/revision checks, expiry, bounded input history, and delivery receipts.
 - A no-key browser demo, editable payloads, gallery, real Even Hub SDK adapter, Docker/Caddy hosting recipe, and Even Hub packaging scripts.
 
 This is a single-wearer developer harness. The SDK path is implemented and tested against a mocked bridge. **Real G2 end-to-end verification remains pending.** The phone's Even Hub app owns Bluetooth; a desktop browser cannot pair with G2 through this project. Microphone capture, arbitrary HTML, remote image fetching, and automatic Codex turns are outside this release.
@@ -40,7 +40,7 @@ npm run demo
 # Open http://127.0.0.1:5173
 ```
 
-Choose a template, edit its JSON and answer, then **Show artifact**. Scroll moves the artifact window. Tap toggles the artifact pane. Double tap closes it. In full-width answer mode, scroll pages the answer. **Clear display** blanks both panes; unexpired artifacts can be selected again through MCP.
+Choose a template, edit its JSON and answer, then **Show artifact**. Scroll moves the artifact window. Tap toggles the artifact pane. In the desktop demo, the simulated double tap closes the pane; on a connected G2, double tap opens the system exit dialog. In full-width answer mode, scroll pages the answer. **Clear display** blanks both panes; unexpired artifacts can be selected again through MCP.
 
 ## Connect Codex
 
@@ -57,9 +57,17 @@ Start/reload a Codex session and ask:
 
 The MCP process reads the local connection file. It does not need an OpenAI API key, and its stdout contains only MCP messages. Your Codex installation provides the model and its usual permissions.
 
-For self-hosted use, connect your MCP client to `https://YOUR_DOMAIN/mcp` with the relay bearer token. See [Codex setup](docs/CODEX.md) for the exact command and configuration. Installing this server in a local Codex client does **not** connect a separate cloud chat or desktop “dot” automatically. Input events are available through `display_events`; they do not wake an agent conversation.
+For self-hosted use, connect your MCP client to `https://YOUR_DOMAIN/mcp` with the relay bearer token. See [Codex setup](docs/CODEX.md) for the exact command and configuration. Installing this server in a local Codex client does **not** connect a separate cloud chat or desktop “dot” automatically. Input events are available through `display_events`; they do not wake an agent conversation. The [controller walkthrough](docs/CONTROLLER.md) shows explicit publish, replace, observe, clear, select-by-ID, and delete operations without model calls.
 
 ## The artifact UX
+
+![Actual split layout: answer on the left, rendered image artifact on the right](docs/assets/image-artifact-preview.png)
+
+*Single-image template in the running browser, using a bundled architecture diagram. Native text is approximated; this is not a lens photograph.*
+
+![Actual four-image board beside the answer pane](docs/assets/image-grid-display.png)
+
+*The right pane holds four bundled images inside one 288 × 288 canvas. G2 receives that canvas as two 288 × 144 grayscale PNG tiles, not four full-color images. [Top tile](docs/assets/image-grid-gray4-top.png) · [Bottom tile](docs/assets/image-grid-gray4-bottom.png). The tile files are exact encoder output with at most sixteen brightness levels. The green browser preview suggests the monochrome display; physical comparison remains pending.*
 
 ![All seven extracted artifact templates rendered with safe example data](docs/assets/template-gallery.jpg)
 
@@ -95,7 +103,7 @@ The same state feeds the browser preview. SDK writes are serialized. A receipt m
    ```
 
 3. Review `.local/app.hosted.json`, install the resulting `.local/even-g2-harness.ehpk` through your Even Hub developer workflow, and enter the relay token at runtime.
-4. Connect the glasses in the Even app, launch the harness, and press **Connect Even Hub**.
+4. Connect the glasses in the Even app and launch the packaged harness. It starts the SDK automatically; **Connect Even Hub** is available for manual connection in the browser workflow.
 5. Follow the [end-to-end acceptance checklist](docs/EVEN_HUB.md#end-to-end-acceptance) before claiming hardware support.
 
 The manifest generator embeds only a public relay origin and exact network whitelist. It never bundles your bearer token. No server or Even Hub listing is deployed by these scripts.
@@ -109,4 +117,8 @@ npm audit
 npm run pack:g2        # demo-only Even Hub package; no network permissions
 ```
 
-The tested baseline is SDK **0.0.14**, CLI **0.1.14**, and Even app **2.2.9+**. npm also offered SDK 0.0.16 during development; it is not silently substituted for this pinned baseline. See [compatibility and limitations](docs/COMPATIBILITY.md), [verification evidence](docs/VERIFICATION.md), [security](SECURITY.md), and [contributing](CONTRIBUTING.md).
+The tested baseline is SDK **0.0.14**, CLI **0.1.14**, and Even app **2.2.9+**. The npm registry check on 2026-10-07 reported SDK **0.0.16** (Even app **2.2.10+**), CLI **0.1.14**, simulator **0.9.5**, and the separate `even-terminal` **0.10.5**. These are distinct packages; this project remains on its tested SDK baseline. See [compatibility and limitations](docs/COMPATIBILITY.md), [verification evidence](docs/VERIFICATION.md), [store preparation](docs/STORE_SUBMISSION.md), [security](SECURITY.md), and [contributing](CONTRIBUTING.md).
+
+## Maintainer handoff
+
+See [the consolidated handoff](docs/HANDOFF.md) for run commands, verification boundaries and remaining acceptance work. [The Sites MCP package](docs/sites-mcp.md) supplies the hosted-backend source and installation overlay. [ChatGPT Sites research](docs/CHATGPT_SITES.md) documents the remaining authentication and lifecycle gates; no live Site or hosted plugin has been deployed.

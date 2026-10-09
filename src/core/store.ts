@@ -1,5 +1,6 @@
-import { artifactSchema, deliverySchema, inputSchema, layoutSchema, type Artifact, type Delivery, type HarnessEvent, type Snapshot } from './contracts.js';
+import { artifactSchema, deliverySchema, inputSchema, layoutSchema, type Artifact, type Delivery, type DisplayInput, type HarnessEvent, type Snapshot } from './contracts.js';
 import { maxScroll, render } from './render.js';
+import { newId } from './id.js';
 
 export class ConflictError extends Error {}
 export class StateStore {
@@ -13,14 +14,15 @@ export class StateStore {
   private journal: HarnessEvent[] = [];
   private seenInputs = new Set<string>();
   private deliveries: Delivery[] = [];
-  constructor(private now = Date.now, readonly sessionId = globalThis.crypto.randomUUID()) {}
+  constructor(private now = Date.now, readonly sessionId = newId()) {}
 
-  private change(type: string, increment = true) {
+  private change(type: string, increment = true, inputType?: DisplayInput['type']) {
     if (increment) { this.revision++; this.deliveries = []; }
-    this.journal.push({ sequence: ++this.sequence, at: this.now(), type, artifactId: this.activeId, revision: this.revision });
+    this.journal.push({ sequence: ++this.sequence, at: this.now(), type, artifactId: this.activeId, revision: this.revision, ...(inputType ? { inputType } : {}) });
     if (this.journal.length > 100) this.journal.shift();
   }
-  private expect(revision?: number) {
+  private expect(revision?: number, sessionId?: string) {
+    if (sessionId !== undefined && sessionId !== this.sessionId) throw new ConflictError('Server session changed; refresh state');
     if (revision !== undefined && revision !== this.revision) throw new ConflictError('State changed; read display_status and retry');
   }
   expire() {
@@ -42,49 +44,51 @@ export class StateStore {
       deliveries: this.deliveries, latestEventSequence: this.sequence,
     });
   }
-  upsert(raw: unknown, expectedRevision?: number) {
-    this.expire(); this.expect(expectedRevision);
+  upsert(raw: unknown, expectedRevision?: number, expectedSessionId?: string) {
+    this.expire(); this.expect(expectedRevision, expectedSessionId);
     const parsed = artifactSchema.parse(raw);
     if (!this.artifacts.has(parsed.id) && this.artifacts.size >= 20) throw new ConflictError('Artifact limit reached; delete an artifact first');
     const artifact: Artifact = { ...parsed, version: (this.artifacts.get(parsed.id)?.version ?? 0) + 1, expiresAt: this.now() + parsed.ttlSeconds * 1000 };
     this.artifacts.set(artifact.id, artifact); this.activeId = artifact.id; this.cursor = 0; this.answerPage = 0; this.layout = 'split';
     this.change('published'); return this.snapshot();
   }
-  select(id: string, expectedRevision?: number) {
-    this.expire(); this.expect(expectedRevision);
+  select(id: string, expectedRevision?: number, expectedSessionId?: string) {
+    this.expire(); this.expect(expectedRevision, expectedSessionId);
     if (!this.artifacts.has(id)) throw new ConflictError('Artifact missing or expired');
     this.activeId = id; this.cursor = 0; this.answerPage = 0; this.layout = 'split'; this.change('selected'); return this.snapshot();
   }
-  clear(expectedRevision?: number) {
-    this.expire(); this.expect(expectedRevision);
+  clear(expectedRevision?: number, expectedSessionId?: string) {
+    this.expire(); this.expect(expectedRevision, expectedSessionId);
     this.activeId = null; this.cursor = 0; this.change('cleared'); return this.snapshot();
   }
-  remove(id: string, expectedRevision?: number) {
-    this.expire(); this.expect(expectedRevision);
+  remove(id: string, expectedRevision?: number, expectedSessionId?: string) {
+    this.expire(); this.expect(expectedRevision, expectedSessionId);
     if (!this.artifacts.delete(id)) throw new ConflictError('Artifact missing or expired');
     if (this.activeId === id) { this.activeId = null; this.cursor = 0; }
     this.change('deleted'); return this.snapshot();
   }
   input(raw: unknown) {
     this.expire(); const input = inputSchema.parse(raw);
-    if (this.seenInputs.has(input.eventId)) return this.snapshot();
     if (input.sessionId !== this.sessionId) throw new ConflictError('Server session changed; refresh state');
+    if (this.seenInputs.has(input.eventId)) return this.snapshot();
     this.expect(input.revision);
     this.seenInputs.add(input.eventId);
     if (this.seenInputs.size > 256) this.seenInputs.delete(this.seenInputs.values().next().value!);
     const artifact = this.activeId ? this.artifacts.get(this.activeId) : undefined;
     if (!artifact) return this.snapshot();
-    if (input.type === 'back') return this.setLayout('answer');
-    if (input.type === 'select') return this.setLayout(this.layout === 'split' ? 'answer' : 'split');
+    if (input.type === 'back' || input.type === 'select') {
+      this.layout = input.type === 'back' || this.layout === 'split' ? 'answer' : 'split'; this.answerPage = 0;
+      this.change(`layout:${this.layout}`, true, input.type); return this.snapshot();
+    }
     if (input.type === 'next' || input.type === 'previous') {
       const direction = input.type === 'next' ? 1 : -1;
       if (this.layout === 'split') this.cursor = Math.min(Math.max(this.cursor + direction, 0), maxScroll(artifact));
       else this.answerPage = Math.min(Math.max(this.answerPage + direction, 0), this.snapshot().frame.pages - 1);
     }
-    this.change(`input:${input.type}`); return this.snapshot();
+    this.change(`input:${input.type}`, true, input.type); return this.snapshot();
   }
-  setLayout(raw: unknown, expectedRevision?: number) {
-    this.expire(); this.expect(expectedRevision);
+  setLayout(raw: unknown, expectedRevision?: number, expectedSessionId?: string) {
+    this.expire(); this.expect(expectedRevision, expectedSessionId);
     this.layout = layoutSchema.parse(raw); this.answerPage = 0;
     this.change(`layout:${this.layout}`); return this.snapshot();
   }
@@ -97,9 +101,9 @@ export class StateStore {
     if (this.deliveries.length > 8) this.deliveries.shift();
     return this.snapshot();
   }
-  events(after = 0) {
-    this.expire();
-    return { events: structuredClone(this.journal.filter(event => event.sequence > after)), cursor: this.sequence,
+  events(after = 0, expectedSessionId?: string) {
+    this.expire(); this.expect(undefined, expectedSessionId);
+    return { sessionId: this.sessionId, events: structuredClone(this.journal.filter(event => event.sequence > after)), cursor: this.sequence,
       truncated: this.journal.length > 0 && after < this.journal[0]!.sequence - 1 };
   }
 }

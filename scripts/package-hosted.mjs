@@ -17,6 +17,6 @@ manifest.package_id = packageId;
 manifest.permissions = [{ name: 'network', desc: 'Read and update artifacts on your private relay.', whitelist: [origin] }];
 await mkdir('.local', { recursive: true });
 await writeFile('.local/app.hosted.json', JSON.stringify(manifest, null, 2));
-await writeFile('dist/web/harness-config.json', JSON.stringify({ relayOrigin: origin }));
+await writeFile('dist/web/harness-config.json', JSON.stringify({ relayOrigin: origin, autoConnectEven: true }));
 run(process.execPath, ['node_modules/@evenrealities/evenhub-cli/main.js', 'pack', '.local/app.hosted.json', 'dist/web', '--sdk-ver', '0.0.14', '-o', '.local/even-g2-harness.ehpk']);
 console.log('Created .local/even-g2-harness.ehpk and .local/app.hosted.json. No token was embedded. Review the manifest before installing through Even Hub.');

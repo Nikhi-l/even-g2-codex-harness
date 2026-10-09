@@ -6,6 +6,7 @@ import { createHarnessServer } from '../src/server/http.js';
 import { makeMcpServer } from '../src/server/mcp-tools.js';
 import { examples } from '../src/core/examples.js';
 import type { Snapshot } from '../src/core/contracts.js';
+import { ArtifactController } from '../src/controller/controller.js';
 const token = 'test-only-local-connection-token-000000';
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
@@ -19,6 +20,17 @@ async function start() {
  return { url, store, request };
 }
 describe('authenticated relay', () => {
+ it('guards every mutation and event query against another relay session', async () => {
+  const { request, store } = await start(); const state = store.upsert(examples[0]!);
+  const guards = { expectedSessionId: globalThis.crypto.randomUUID(), expectedRevision: state.revision };
+  for (const [path,method,data] of [
+   ['/api/artifacts','POST',{...guards,artifact:examples[1]}], ['/api/select','POST',{...guards,id:examples[0]!.id}],
+   ['/api/layout','POST',{...guards,layout:'answer'}], ['/api/clear','POST',guards], ['/api/artifacts','DELETE',{...guards,id:examples[0]!.id}],
+  ] as const) expect((await request(path,method,data)).status).toBe(409);
+  expect((await request(`/api/events?after=0&expectedSessionId=${guards.expectedSessionId}`)).status).toBe(409);
+  expect((await request('/api/events?expectedSessionId=invalid')).status).toBe(400);
+  expect(store.snapshot()).toEqual(state);
+ });
  it('rejects missing auth, hostile origins, invalid input and excessive payloads', async () => {
   const { url, request } = await start();
   expect((await fetch(url + '/api/state')).status).toBe(401);
@@ -45,6 +57,19 @@ describe('authenticated relay', () => {
  });
 });
 describe('real MCP SDK transports', () => {
+ it('runs the actual controller lifecycle and observes input without another mutation', async () => {
+  const { url, request, store } = await start(); const server = makeMcpServer({url,token});
+  const [clientTransport,serverTransport] = InMemoryTransport.createLinkedPair(); await server.connect(serverTransport);
+  const client = new Client({name:'real-controller-test',version:'1'}); await client.connect(clientTransport);
+  cleanups.push(async () => { await client.close(); await server.close(); });
+  const controller = new ArtifactController(client); await controller.refresh();
+  await controller.publish(examples[0]!); let state = await controller.publish({...examples[0]!,answer:'Updated'});
+  expect(state.artifacts[0]?.version).toBe(2); await controller.observe();
+  state = await (await request('/api/input','POST',{type:'select',eventId:'observed-tap',sessionId:state.sessionId,revision:state.revision})).json() as Snapshot;
+  const observed = await controller.observe(); expect(observed.batch.events[0]?.inputType).toBe('select'); expect(store.snapshot().revision).toBe(state.revision);
+  await controller.clear(); await controller.select(examples[0]!.id); expect((await controller.delete(examples[0]!.id)).artifacts).toEqual([]);
+  store.upsert(examples[1]!); await expect(controller.clear()).rejects.toThrow('refresh'); expect(store.snapshot().activeId).toBe(examples[1]!.id);
+ });
  it('lists tools and round-trips an artifact through MCP, HTTP, state and input events', async () => {
   const { url, request } = await start(); const server = makeMcpServer({ url, token });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

@@ -14,15 +14,17 @@
     "mcp": "node dist/server/mcp.js",
     "build": "tsc -p tsconfig.build.json && vite build && node scripts/copy-notices.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src tests scripts",
+    "lint": "eslint src tests scripts packages/sites-mcp/src packages/sites-mcp/tests packages/sites-mcp/*.ts packages/sites-mcp/scripts",
     "test": "vitest run",
     "test:browser": "playwright test",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run audit:files",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run audit:files && npm run check:sites",
     "audit:files": "node scripts/audit-public.mjs",
     "demo": "vite --host 127.0.0.1",
-    "pack:g2": "npm run build && evenhub pack app.json dist/web --sdk-ver 0.0.14 -o even-g2-harness.ehpk",
+    "pack:g2": "npm run build && node scripts/package-demo.mjs",
     "qr:g2": "evenhub qr --http --port 8787",
-    "package:hosted": "node scripts/package-hosted.mjs"
+    "package:hosted": "node scripts/package-hosted.mjs",
+    "example:controller": "node dist/controller/example.js",
+    "check:sites": "npm --prefix packages/sites-mcp run check"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "0.0.14",

@@ -6,12 +6,55 @@ import { StateStore } from '../src/core/store.js';
 import { examples } from '../src/core/examples.js';
 function setup() {
  const unsubscribe = vi.fn();
- const bridge: Bridge = { createStartUpPageContainer: vi.fn(async () => StartUpPageCreateResult.success), rebuildPageContainer: vi.fn(async () => true), textContainerUpgrade: vi.fn(async () => true), updateImageRawData: vi.fn(async () => ImageRawDataUpdateResult.success), onEvenHubEvent: vi.fn(() => unsubscribe) };
+ const bridge: Bridge = { createStartUpPageContainer: vi.fn(async () => StartUpPageCreateResult.success), rebuildPageContainer: vi.fn(async () => true), textContainerUpgrade: vi.fn(async () => true), updateImageRawData: vi.fn(async () => ImageRawDataUpdateResult.success), onEvenHubEvent: vi.fn(() => unsubscribe), shutDownPageContainer: vi.fn(async () => true), getLocalStorage: vi.fn(async () => ''), setLocalStorage: vi.fn(async () => true) };
  const store = new StateStore(); const frame = store.upsert(examples[0]).frame;
  const tiles = vi.fn(async () => [new Uint8Array([1]), new Uint8Array([2])]);
  return { bridge, store, frame, tiles, unsubscribe, adapter: new EvenAdapter(bridge, vi.fn(), vi.fn(), 100, tiles) };
 }
 describe('Even adapter', () => {
+ it('serializes phone settings with rendering and system exit', async () => {
+  const { adapter, bridge, frame } = setup(); let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  vi.mocked(bridge.updateImageRawData).mockImplementationOnce(async () => { await blocked; return ImageRawDataUpdateResult.success; });
+  const render = adapter.render(frame); await vi.waitFor(() => expect(bridge.updateImageRawData).toHaveBeenCalledOnce());
+  const read = adapter.readSetting('synthetic-key'); const write = adapter.writeSetting('synthetic-key', 'synthetic-value');
+  const exit = adapter.requestSystemExit();
+  expect(bridge.getLocalStorage).not.toHaveBeenCalled(); expect(bridge.setLocalStorage).not.toHaveBeenCalled();
+  await expect(adapter.writeSetting('after-exit', '')).rejects.toThrow('exit is pending');
+  release(); await Promise.all([render, read, write, exit]);
+  expect(vi.mocked(bridge.getLocalStorage).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(bridge.setLocalStorage).mock.invocationCallOrder[0]!);
+  expect(vi.mocked(bridge.setLocalStorage).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(bridge.shutDownPageContainer).mock.invocationCallOrder[0]!);
+ });
+ it('fails closed on a setting timeout before another queued SDK operation', async () => {
+  const { adapter, bridge, frame, unsubscribe } = setup();
+  vi.mocked(bridge.getLocalStorage).mockImplementation(() => new Promise(() => {}));
+  const reading = adapter.readSetting('synthetic-key');
+  const rendering = adapter.render(frame);
+  const outcomes = await Promise.allSettled([reading, rendering]);
+  expect(outcomes.every(result => result.status === 'rejected')).toBe(true);
+  expect(bridge.createStartUpPageContainer).not.toHaveBeenCalled(); expect(unsubscribe).toHaveBeenCalledOnce();
+  await expect(adapter.writeSetting('synthetic-key', '')).rejects.toThrow('closed'); expect(bridge.setLocalStorage).not.toHaveBeenCalled();
+ });
+ it('routes root double tap to the system exit dialog after pending image writes', async () => {
+  const { adapter, bridge, frame } = setup();
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  vi.mocked(bridge.updateImageRawData).mockImplementationOnce(async () => { await blocked; return ImageRawDataUpdateResult.success; });
+  const rendering = adapter.render(frame);
+  await vi.waitFor(() => expect(bridge.updateImageRawData).toHaveBeenCalledOnce());
+  const event = vi.mocked(bridge.onEvenHubEvent).mock.calls[0]![0];
+  event({ sysEvent: new Sys_ItemEvent({ eventType: 3 }) });
+  event({ sysEvent: new Sys_ItemEvent({ eventType: 3 }) });
+  expect(bridge.shutDownPageContainer).not.toHaveBeenCalled();
+  release(); await rendering;
+  await vi.waitFor(() => expect(bridge.shutDownPageContainer).toHaveBeenCalledExactlyOnceWith(1));
+ });
+ it('fails closed when system exit is rejected', async () => {
+  const { adapter, bridge, frame } = setup(); await adapter.render(frame);
+  vi.mocked(bridge.shutDownPageContainer).mockResolvedValue(false);
+  await expect(adapter.requestSystemExit()).rejects.toThrow('rejected');
+  await expect(adapter.render(frame)).rejects.toThrow('closed');
+ });
  it('normalizes real text/system envelopes and omitted zero click without phantom taps', () => {
   expect(normalizeInput({})).toBeNull(); expect(normalizeInput({ jsonData: {} })).toBeNull();
   expect(normalizeInput({ sysEvent: new Sys_ItemEvent() })).toBe('select');

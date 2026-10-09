@@ -1,0 +1,12 @@
+{
+  "name": "@even-g2/sites-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-sqlite ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "vite build --config vite.config.ts && node scripts/copy-notices.mjs",
+    "check": "npm run typecheck && npm test && npm run build"
+  }
+}

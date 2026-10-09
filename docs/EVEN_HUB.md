@@ -10,7 +10,7 @@ Official display guidance: 576×288, 4-bit green grayscale; at most four image p
 
 ## Build packages
 
-`npm run pack:g2` creates `even-g2-harness.ehpk` using `app.json`. This is a **demo-only** package with no network permissions; it can show the bundled local examples and exercise the SDK after explicit connection. It is ignored by Git and is not uploaded anywhere.
+`npm run pack:g2` creates `even-g2-harness.ehpk` using `app.json`. This is a **demo-only** package with no network permissions; it shows bundled examples and automatically initializes the SDK with first-launch instructions. It is ignored by Git and is not uploaded anywhere. Store preparation and remaining release gates are in [STORE_SUBMISSION.md](STORE_SUBMISSION.md).
 
 For a hosted relay:
 
@@ -24,7 +24,20 @@ Replace both placeholders with your own values. The script builds the app, write
 
 Review the generated manifest and package contents. Use your existing Even Hub developer account's current upload/test-group workflow to install it. Developer account approval, package-ID availability, app review and store publication are external steps, not completed by this repository. Follow [official Even Hub portal](https://hub.evenrealities.com/) and current portal requirements; do not claim an app is published merely because packaging succeeded.
 
-In the Even app, pair/connect G2 using its normal controls, open the harness, connect to the private relay with the runtime token, then press **Connect Even Hub**. This task does not change device firmware or account settings. An ordinary browser reports bridge absence or rejected page creation (the SDK may provide a non-native shim). Neither path reports successful device delivery.
+In the Even app, pair/connect G2 using its normal controls and open the packaged harness. It initializes the SDK automatically. Use **Connect relay** on the phone for live Codex data. The hosted package can optionally remember its exact HTTPS relay and token using SDK local storage; this is off by default, is not a hardware keystore, and includes a Forget control. A new empty relay shows setup guidance instead of a silent black first-run screen. An ordinary browser reports bridge absence or rejected page creation (the SDK may provide a non-native shim). Neither path reports successful device delivery.
+
+## Temporary Wi-Fi test
+
+The normal desktop preview binds only to `127.0.0.1:5173`; that address cannot be reached from an iPhone. With the user's approval to expose the bundled demo on a trusted Wi-Fi network, and with both devices on that network, bind only to the Mac's actual LAN IP:
+
+```bash
+npm run demo -- --host YOUR_MAC_LAN_IP
+npx evenhub qr --url 'http://YOUR_MAC_LAN_IP:5173/?evenhub=1&template=image_grid'
+```
+
+Stop the loopback demo before reusing its port. Replace the IP placeholder; do not scan a QR containing `127.0.0.1` from the phone. Scan through the Even app's developer/local testing flow. The `evenhub=1` flag starts the SDK automatically and the template flag selects a bundled image board. HTTP development WebViews use cryptographic random bytes for UUIDs when the secure-context `randomUUID` API is unavailable.
+
+This demo exposes only bundled development UI to that local network. Do not attach private Codex state to it, open firewall/router ports, or create a public tunnel as an implicit next step. Stop the dev server after the session. Enabling the LAN address, developer mode, or any requested phone permission still needs the wearer's action/approval. QR mode does not establish locked-phone background behavior; install a private/beta package for that test.
 
 ## Simulator versus preview
 
@@ -41,7 +54,9 @@ Record app/SDK/firmware versions, source commit, test time, device mode, and san
 - [ ] Codex lists `artifact_templates` and `display_capabilities`, then sends a list via `show_artifact`.
 - [ ] `display_status` shows the same artifact/session/revision and a current `bridge-accepted` receipt from the phone.
 - [ ] A human visually confirms answer text and the artifact on the physical G2 display. Capture a real photo/video if practical; record separately from the browser screenshot.
-- [ ] Scroll exposes later list rows; `display_events` returns the matching input event. Tap toggles layout; double tap closes the artifact. No action runs automatically.
+- [ ] Scroll exposes later list rows; `display_events` returns the matching input event. Tap toggles layout. On the glasses, double tap opens the system exit-confirmation dialog; confirming it closes the WebView. No action runs automatically.
+- [ ] Exit and re-launch the app, then launch a first-party app without restarting the glasses. Test private/beta installation with the phone locked for five minutes. QR mode is insufficient for this check.
+- [ ] If remembered setup is enabled, cold-launch restores only the packaged relay; Forget removes the saved connection. Test with a dedicated test relay, not personal conversations.
 - [ ] Send all seven templates, including all image-backed templates. Check tile alignment, readable contrast, clipping, and the calendar's last week.
 - [ ] Update only the answer; verify the artifact stays stable. Send a shorter answer; verify stale text is cleared.
 - [ ] Switch layouts, clear, select an existing artifact, delete it, and wait for a short TTL to expire.

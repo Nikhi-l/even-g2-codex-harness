@@ -1,10 +1,12 @@
 import './styles.css';
 import { StateStore } from '../core/store.js';
-import { artifactSchema, type ArtifactInput, type DisplayInput, type Snapshot } from '../core/contracts.js';
+import { artifactSchema, type ArtifactInput, type DisplayFrame, type DisplayInput, type Snapshot } from '../core/contracts.js';
 import { examples } from '../core/examples.js';
+import { newId } from '../core/id.js';
 import { allTemplates } from '../artifacts/index.js';
 import { PreviewAdapter, RenderQueue, type Receipt } from '../device/adapter.js';
-import { connectEven } from '../device/even.js';
+import { connectEven, type EvenAdapter } from '../device/even.js';
+import { SETTINGS_KEY, parseRememberedRelay, rememberRelay } from '../device/settings.js';
 import { registerAssets } from './assets.js';
 import { paintPreview } from './preview.js';
 
@@ -23,15 +25,19 @@ local.select(selected.id);
 let snapshot = local.snapshot();
 let connection: { origin: string; token: string } | null = null;
 let generation = 0;
+let settingsGeneration = 0;
 let lastFrameKey = '';
 let lastHealthy = Date.now();
 let backoff = 750;
 let pollTimer: ReturnType<typeof setTimeout>;
 let evenQueue: RenderQueue | null = null;
+let evenAdapter: EvenAdapter | null = null;
+let packagedOrigin = '';
+let appMode = new URL(location.href).searchParams.get('evenhub') === '1';
 let evenFailed = false;
 let evenReceipt: Receipt | null = null;
 let inputBusy = false;
-const clientId = `web-${crypto.randomUUID()}`;
+const clientId = `web-${newId()}`;
 
 function message(text: string) { element('message').textContent = text; }
 function log(text: string) {
@@ -41,11 +47,11 @@ function log(text: string) {
   row.append(time, detail); const container = element('activity-log'); container.prepend(row);
   while (container.children.length > 12) container.lastElementChild?.remove();
 }
-async function api(path: string, method = 'GET', data?: unknown): Promise<Snapshot> {
-  if (!connection) throw new Error('Connect the relay first');
-  const response = await fetch(`${connection.origin}${path}`, {
+async function api(path: string, method = 'GET', data?: unknown, target = connection): Promise<Snapshot> {
+  if (!target) throw new Error('Connect the relay first');
+  const response = await fetch(`${target.origin}${path}`, {
     method, redirect: 'error', signal: AbortSignal.timeout(4000),
-    headers: { Authorization: `Bearer ${connection.token}`, 'content-type': 'application/json' },
+    headers: { Authorization: `Bearer ${target.token}`, 'content-type': 'application/json' },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
   const result = await response.json() as Snapshot & { error?: string };
@@ -68,12 +74,18 @@ function syncEditor(artifact: ArtifactInput) {
   answerEditor.value = artifact.answer ?? '';
   element('template-name').textContent = artifact.template;
 }
+function deviceFrame(frame: DisplayFrame): DisplayFrame {
+  if (connection && frame.revision === 0 && !frame.artifact && !frame.text) {
+    return { ...frame, text: 'G2 Artifact Harness\n\nRelay connected.\nAsk Codex to show an artifact.\n\nDouble tap: system exit.' };
+  }
+  return frame;
+}
 function apply(next: Snapshot) {
   snapshot = next;
   const key = `${next.sessionId}:${next.revision}`;
   if (key !== lastFrameKey) {
     lastFrameKey = key;
-    previewQueue.submit(next.frame); evenQueue?.submit(next.frame);
+    previewQueue.submit(next.frame); evenQueue?.submit(deviceFrame(next.frame));
     const active = next.artifacts.find(artifact => artifact.id === next.activeId);
     if (active) {
       element('artifact-label').textContent = active.id;
@@ -87,7 +99,7 @@ function apply(next: Snapshot) {
 async function mutate(path: string, data: Record<string, unknown>) {
   if (!connection) throw new Error('No relay');
   const before = generation;
-  const next = await api(path, 'POST', data);
+  const next = await api(path, 'POST', path === '/api/input' ? data : { ...data, expectedSessionId: snapshot.sessionId });
   if (generation === before) { lastHealthy = Date.now(); apply(next); }
 }
 async function publish(artifact: ArtifactInput) {
@@ -100,7 +112,7 @@ async function input(type: DisplayInput['type'], expected = { revision: snapshot
   if (inputBusy) return;
   inputBusy = true;
   try {
-    const data = { type, eventId: crypto.randomUUID(), sessionId: expected.sessionId, revision: expected.revision };
+    const data = { type, eventId: newId(), sessionId: expected.sessionId, revision: expected.revision };
     if (connection) await mutate('/api/input', data); else apply(local.input(data));
     message(''); log(`Input · ${type}`);
   } catch (error) { message(error instanceof Error ? error.message : 'Input failed'); }
@@ -124,18 +136,37 @@ async function poll() {
     if (currentGeneration === generation) pollTimer = setTimeout(() => { void poll(); }, backoff);
   }
 }
-async function connect(origin: string, token: string) {
+async function connect(origin: string, token: string, restoring = false) {
+  if (packagedOrigin && origin !== packagedOrigin) throw new Error('Use the HTTPS relay origin configured for this package');
   const url = new URL(origin);
   if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol)) throw new Error('Enter a full HTTP(S) origin without a path');
   if (url.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(url.hostname) && !confirm('Use this HTTP relay only on a trusted development LAN. Continue?')) return;
-  generation++; clearTimeout(pollTimer); connection = { origin, token };
+  let currentGeneration = ++generation;
+  const currentSettingsGeneration = ++settingsGeneration;
+  const superseded = () => generation !== currentGeneration || (restoring && settingsGeneration !== currentSettingsGeneration);
+  clearTimeout(pollTimer);
   try {
-    const next = await api('/api/state');
+    const next = await api('/api/state', 'GET', undefined, { origin, token });
+    if (superseded()) return;
+    // Work against the previous relay may have started while this connection was pending.
+    currentGeneration = ++generation; clearTimeout(pollTimer);
+    connection = { origin, token };
     lastFrameKey = ''; lastHealthy = Date.now(); apply(next); backoff = 750;
     element('mode-label').textContent = 'Connected relay'; element('relay-status').textContent = 'Connected';
     element('connection-panel').hidden = true; relayToken.value = ''; message(''); log('Relay connected');
-  } catch (error) { connection = null; throw error; }
-  finally { void poll(); }
+    if (evenAdapter && packagedOrigin && settingsGeneration === currentSettingsGeneration) {
+      const remember = element<HTMLInputElement>('remember-relay').checked;
+      try {
+        await evenAdapter.writeSetting(SETTINGS_KEY, remember ? rememberRelay(origin, token, packagedOrigin) : '');
+        if (generation === currentGeneration && settingsGeneration === currentSettingsGeneration)
+          element('saved-status').textContent = remember ? 'Connection remembered on this phone.' : 'Connection is memory-only.';
+      } catch {
+        if (generation === currentGeneration && settingsGeneration === currentSettingsGeneration)
+          message('Connected, but phone settings were not saved. Reconnect after relaunch.');
+      }
+    }
+  } catch (error) { if (!superseded()) throw error; }
+  finally { if (generation === currentGeneration) void poll(); }
 }
 for (const [index, example] of examples.entries()) {
   const button = document.createElement('button'); button.className = 'template-button'; button.type = 'button'; button.dataset.template = example.template;
@@ -148,7 +179,10 @@ element('artifact-form').addEventListener('submit', event => {
   try { void publish({ ...selected, data: JSON.parse(jsonEditor.value) as ArtifactInput['data'], answer: answerEditor.value } as ArtifactInput).catch(fail); }
   catch { message('Template payload must be valid JSON.'); }
 });
-for (const button of document.querySelectorAll<HTMLButtonElement>('[data-input]')) button.addEventListener('click', () => { void input(button.dataset.input as DisplayInput['type']); });
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-input]')) button.addEventListener('click', () => {
+  if (button.dataset.input === 'back' && evenAdapter) void evenAdapter.requestSystemExit().catch(fail);
+  else void input(button.dataset.input as DisplayInput['type']);
+});
 element('layout-button').addEventListener('click', () => { void input('select'); });
 element('clear-button').addEventListener('click', () => {
   const action = connection ? mutate('/api/clear', { expectedRevision: snapshot.revision }) : Promise.resolve(apply(local.clear()));
@@ -157,22 +191,51 @@ element('clear-button').addEventListener('click', () => {
 element('connection-toggle').addEventListener('click', () => { element('connection-panel').hidden = !element('connection-panel').hidden; });
 element('connection-form').addEventListener('submit', event => { event.preventDefault(); void connect(relayUrl.value.trim(), relayToken.value).catch(fail); });
 element('demo-button').addEventListener('click', () => {
-  generation++; connection = null; clearTimeout(pollTimer); lastFrameKey = '';
+  generation++; settingsGeneration++; connection = null; clearTimeout(pollTimer); lastFrameKey = '';
   element('mode-label').textContent = 'Local demo'; element('relay-status').textContent = 'Demo · in memory'; element('connection-panel').hidden = true;
   apply(local.snapshot()); void poll(); log('Local demo selected');
 });
-element('even-button').addEventListener('click', () => {
+element('forget-relay').addEventListener('click', () => {
+  if (!evenAdapter) return;
+  const currentSettingsGeneration = ++settingsGeneration;
+  element<HTMLInputElement>('remember-relay').checked = false;
+  void evenAdapter.writeSetting(SETTINGS_KEY, '').then(() => {
+    if (settingsGeneration === currentSettingsGeneration)
+      element('saved-status').textContent = 'Saved connection removed. Current session remains connected.';
+  }).catch(error => { if (settingsGeneration === currentSettingsGeneration) fail(error); });
+});
+function startEven() {
   if (evenFailed) { message('Reopen the Even Hub app to recover the SDK surface.'); return; }
   if (evenQueue) { message('Even Hub adapter is already connected.'); return; }
   const button = element<HTMLButtonElement>('even-button'); button.disabled = true;
-  void connectEven(type => { if (evenReceipt) void input(type, evenReceipt); }, log).then(adapter => {
+  const failed = (error: Error) => {
+    evenFailed = true; evenQueue?.dispose(); element('adapter-status').textContent = 'Failed · reopen Even Hub'; message(error.message); log('Even adapter failed');
+  };
+  void connectEven(type => { if (evenReceipt) void input(type, evenReceipt); }, log, failed).then(async adapter => {
+    evenAdapter = adapter;
     evenQueue = new RenderQueue(adapter, receipt => { evenReceipt = receipt; void acknowledge(receipt, 'even'); element('adapter-status').textContent = 'Even Hub · accepted'; }, (error, revision) => {
-      evenFailed = true; element('adapter-status').textContent = 'Failed · reopen Even Hub'; message(error.message); log('Even adapter failed');
+      failed(error);
       if (connection) void api('/api/delivery', 'POST', { clientId: `even-${clientId}`, mode: 'even', status: 'failed', revision, sessionId: snapshot.sessionId, detail: 'SDK operation failed; reopen the Even Hub app' }).catch(() => {});
     });
-    evenQueue.submit(snapshot.frame); element('adapter-status').textContent = 'Even Hub · rendering'; log('Even Hub adapter connected');
+    evenQueue.submit(deviceFrame(snapshot.frame)); element('adapter-status').textContent = 'Even Hub · rendering'; log('Even Hub adapter connected');
+    const back = document.querySelector<HTMLButtonElement>('[data-input="back"]')!;
+    back.textContent = 'Double tap · system exit';
+    if (packagedOrigin) {
+      element('phone-settings').hidden = false;
+      try {
+        const restoreSettingsGeneration = settingsGeneration;
+        const saved = parseRememberedRelay(await adapter.readSetting(SETTINGS_KEY), packagedOrigin);
+        // An explicit connection attempt or Demo choice takes precedence over startup restoration.
+        if (saved && !connection && generation === 0 && settingsGeneration === restoreSettingsGeneration) {
+          element<HTMLInputElement>('remember-relay').checked = true;
+          // A saved credential is sent only to the exact origin baked into this package.
+          await connect(saved.origin, saved.token, true);
+        }
+      } catch { message('Could not restore relay setup. Open Connect relay on your phone.'); }
+    }
   }).catch(fail).finally(() => { button.disabled = false; });
-});
+}
+element('even-button').addEventListener('click', startEven);
 // Network loss and TTL are evaluated locally as well, so stale private content is blanked.
 setInterval(() => {
   const expired = snapshot.frame.artifact && snapshot.frame.artifact.expiresAt <= Date.now();
@@ -187,7 +250,17 @@ setInterval(() => {
 }, 1000);
 window.addEventListener('pagehide', () => { clearTimeout(pollTimer); previewQueue.dispose(); evenQueue?.dispose(); });
 relayUrl.value = location.origin;
-try { const config = await (await fetch('./harness-config.json')).json() as { relayOrigin?: string }; if (config.relayOrigin) relayUrl.value = config.relayOrigin; } catch { /* demo config is optional */ }
+try {
+  const config = await (await fetch('./harness-config.json', { signal: AbortSignal.timeout(3000) })).json() as { relayOrigin?: string; autoConnectEven?: boolean };
+  if (config.relayOrigin && new URL(config.relayOrigin).origin === config.relayOrigin && config.relayOrigin.startsWith('https://')) {
+    packagedOrigin = config.relayOrigin; relayUrl.value = config.relayOrigin;
+  }
+  appMode ||= config.autoConnectEven === true;
+} catch { /* demo config is optional */ }
+if (appMode) {
+  selected = { ...selected, answer: 'G2 Artifact Harness\n\nBundled demo. Connect your relay on the phone for Codex artifacts.\n\nTap: toggle pane.\nDouble tap: system exit.' };
+  snapshot = local.upsert(selected);
+}
 syncEditor(selected); apply(snapshot); log('Local demo · no glasses or API key required');
 const fragment = new URLSearchParams(location.hash.slice(1));
 const token = fragment.get('token');
@@ -195,3 +268,4 @@ if (token) {
   history.replaceState(null, '', location.pathname + location.search);
   await connect(relayUrl.value, token).catch(fail);
 } else void poll();
+if (appMode) startEven();

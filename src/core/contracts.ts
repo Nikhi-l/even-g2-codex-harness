@@ -43,7 +43,7 @@ export interface DisplayFrame {
   sessionId: string; revision: number; artifact: Artifact | null; layout: 'split' | 'answer'; scroll: number;
   text: string; page: number; pages: number;
 }
-export interface HarnessEvent { sequence: number; at: number; type: string; artifactId: string | null; revision: number }
+export interface HarnessEvent { sequence: number; at: number; type: string; artifactId: string | null; revision: number; inputType?: DisplayInput['type'] }
 export interface Snapshot {
   sessionId: string; revision: number; activeId: string | null; artifacts: Artifact[];
   frame: DisplayFrame; deliveries: Delivery[]; latestEventSequence: number;
@@ -54,4 +54,5 @@ export const CAPABILITIES = Object.freeze({
   imageKeys: imageKeySchema.options, input: ['next', 'previous', 'select', 'back'],
   maxArtifacts: 20, imageContainers: 2, textContainers: 1, hardwareVerified: false,
   microphone: false, directBluetooth: false, automaticAgentTurns: false, statePersistence: 'memory-only',
+  sessionGuard: true, eventsSession: true, nativeDoubleTap: 'system-exit-dialog',
 });

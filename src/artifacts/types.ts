@@ -12,6 +12,8 @@ import { ARTIFACT_COLORS } from "./render.js";
 export type ArtifactView = {
   scroll: number;
   thinking?: boolean;
+  /** Option the wearer chose on a `choices` artifact. */
+  chosen?: number | null;
 };
 
 /** Everything a template needs to draw, without importing the host app. */

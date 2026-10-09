@@ -10,7 +10,7 @@ Status: local preparation only. No portal project, upload, private installation,
 
 **Description:** Keep a short answer beside a compact visual artifact on your G2. View lists, schedules, images, image boards, illustrated lists, detail cards, and calendars. Scroll through content and tap to focus on the answer. Double tap opens the system exit dialog. Try bundled examples without an API key, or connect your own private HTTPS relay and compatible MCP client to display your own artifacts. A relay and Codex setup are required for live agent content. The app does not record audio, pair Bluetooth, or start agent turns automatically. Images use the G2 monochrome display and bundled image aliases.
 
-**English release notes:** View answers beside seven artifact types, including image boards. Scroll and switch between split and answer views, with a system exit dialog and optional remembered relay setup.
+**English release notes:** View answers beside twelve artifact types, including checklists, choices you can answer with a tap, stats and turn-by-turn directions. Scroll and switch between split and answer views, with a system exit dialog and optional remembered relay setup.
 
 **Source/support:** https://github.com/Nikhi-l/even-g2-codex-harness
 

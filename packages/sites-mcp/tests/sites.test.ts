@@ -79,10 +79,10 @@ describe('Sites MCP protocol and isolation', () => {
     expect((await s.tool('display_clear', guards(a))).value.code).toBe('CONFLICT');
     expect((await s.tool('display_clear', guards(b), 'bob')).value.revision).toBe(1);
   });
-  it('validates all seven templates using shared schemas', async () => {
+  it('validates every template using shared schemas', async () => {
     const s = setup(); let state = (await s.tool('display_status')).value as Snapshot;
     for (const artifact of examples) { state = (await s.tool('show_artifact', { artifact, ...guards(state) })).value; }
-    expect(state.artifacts).toHaveLength(7);
+    expect(state.artifacts).toHaveLength(examples.length);
     expect((await s.tool('show_artifact', { artifact: { id: 'bad', template: 'image', data: { src: 'https://attacker.test/a.png' } }, ...guards(state) })).value.code).toBe('INVALID_ARGUMENTS');
     expect((await s.tool('show_artifact', { artifact: examples[0] })).value.code).toBe('INVALID_ARGUMENTS');
   });
@@ -169,5 +169,15 @@ describe('bounded display state and honest receipts', () => {
     state = await s.repository.execute('alice', 'show_artifact', { artifact: examples[0], ...guards(state) }) as Snapshot;
     const restored = await new D1Repository(s.db, () => 100000).execute('alice', 'display_status', {}) as Snapshot;
     expect(restored).toEqual(state);
+  });
+  it('records a tap on a choices artifact as the same choice event as the local relay', async () => {
+    const s = setup(); let state = (await s.tool('display_status')).value as Snapshot;
+    const choices = examples.find(example => example.template === 'choices')!;
+    state = (await s.tool('show_artifact', { artifact: choices, ...guards(state) })).value;
+    state = await s.repository.execute('alice', 'input', { type: 'next', eventId: 'choice-scroll', sessionId: state.sessionId, revision: state.revision }) as Snapshot;
+    state = await s.repository.execute('alice', 'input', { type: 'select', eventId: 'choice-tap', sessionId: state.sessionId, revision: state.revision }) as Snapshot;
+    expect(state.frame).toMatchObject({ layout: 'split', scroll: 1, chosen: 1 });
+    const events = (await s.tool('display_events', { after: 0, expectedSessionId: state.sessionId })).value as { events: Array<Record<string, unknown>> };
+    expect(events.events.at(-1)).toMatchObject({ type: 'choice', inputType: 'select', choice: 1, artifactId: choices.id, artifactVersion: 1 });
   });
 });

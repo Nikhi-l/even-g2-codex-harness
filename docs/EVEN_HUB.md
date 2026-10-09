@@ -57,7 +57,10 @@ Record app/SDK/firmware versions, source commit, test time, device mode, and san
 - [ ] Scroll exposes later list rows; `display_events` returns the matching input event. Tap toggles layout. On the glasses, double tap opens the system exit-confirmation dialog; confirming it closes the WebView. No action runs automatically.
 - [ ] Exit and re-launch the app, then launch a first-party app without restarting the glasses. Test private/beta installation with the phone locked for five minutes. QR mode is insufficient for this check.
 - [ ] If remembered setup is enabled, cold-launch restores only the packaged relay; Forget removes the saved connection. Test with a dedicated test relay, not personal conversations.
-- [ ] Send all seven templates, including all image-backed templates. Check tile alignment, readable contrast, clipping, and the calendar's last week.
+- [ ] Send all twelve templates, including all image-backed templates. Check tile alignment, readable contrast (calendar marked days, the highlighted choice), clipping, and the calendar's last week.
+- [ ] Send a long answer. Every page shows a header and at most eight rows, with no firmware scrollbar; scroll in full-width mode pages it. Compare the worst-case list answer with `test-results/simulator/stress-list-answer.png`.
+- [ ] On `choices`, scroll to the second option and tap. `display_events` returns a `choice` event with `choice: 1`, the option shows a check, and the pane does not toggle.
+- [ ] Send a long answer, then a shorter one. No stale tail remains (the adapter rebuilds on shrink).
 - [ ] Update only the answer; verify the artifact stays stable. Send a shorter answer; verify stale text is cleared.
 - [ ] Switch layouts, clear, select an existing artifact, delete it, and wait for a short TTL to expire.
 - [ ] Disconnect the relay network while keeping the app active; after ten seconds the client attempts to blank the display. Restore network and verify the latest state recovers without stale content.

@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { artifactSchema, templateSchemas } from '../src/core/contracts.js';
 import { examples } from '../src/core/examples.js';
 import { StateStore } from '../src/core/store.js';
-import { columns, wrap } from '../src/core/render.js';
+import { maxScroll, render } from '../src/core/render.js';
+import { G2_TEXT, fitText, textWidth, wrapText } from '../src/core/text.js';
+import { stressArtifacts } from '../src/core/stress.js';
 import { allTemplates } from '../src/artifacts/index.js';
 
 describe('artifact registry and validation', () => {
- it('preserves all seven extracted templates and validates every example', () => {
+ it('keeps the registry and schemas aligned and validates every example and stress fixture', () => {
   expect(allTemplates().map(value => value.id).sort()).toEqual(Object.keys(templateSchemas).sort());
-  for (const example of examples) expect(artifactSchema.safeParse(example).success).toBe(true);
+  expect(Object.keys(templateSchemas)).toHaveLength(12);
+  for (const example of [...examples, ...stressArtifacts]) expect(artifactSchema.safeParse(example).success).toBe(true);
+  expect(new Set(examples.map(example => example.template)).size).toBe(12);
  });
  it('rejects arbitrary URLs, unknown properties, unbounded data and invalid calendar dates', () => {
   expect(artifactSchema.safeParse({ id: 'img', template: 'image', data: { src: 'https://example.com/private' } }).success).toBe(false);
@@ -16,9 +20,33 @@ describe('artifact registry and validation', () => {
   expect(artifactSchema.safeParse({ id: 'x', template: 'list', data: { rows: Array(41).fill('item') } }).success).toBe(false);
   expect(artifactSchema.safeParse({ id: 'cal', template: 'calendar', data: { month: '2026-02', marks: [{ day: 30 }] } }).success).toBe(false);
  });
- it('wraps long and wide text into conservative columns', () => {
-  expect(wrap('a'.repeat(90), 21).every(row => columns(row) <= 21)).toBe(true);
-  expect(wrap('漢字'.repeat(25), 21).every(row => columns(row) <= 21)).toBe(true);
+ it('wraps by measured pixel width, including wide glyphs and CJK', () => {
+  for (const sample of ['W'.repeat(90), 'i'.repeat(300), '\u6f22\u5b57'.repeat(60), 'The quick brown fox jumps. '.repeat(20)]) {
+   for (const [width, chars] of [[G2_TEXT.splitWidth, G2_TEXT.splitChars], [G2_TEXT.fullWidth, G2_TEXT.fullChars]] as const)
+    expect(wrapText(sample, width, chars).every(row => textWidth(row) <= width && [...row].length <= chars)).toBe(true);
+  }
+  expect(wrapText('alpha beta', 260, 48)).toEqual(['alpha beta']);
+  expect(wrapText('one\n\ntwo', 260, 48)).toEqual(['one', '', 'two']);
+  expect(textWidth(fitText('W'.repeat(40), 100))).toBeLessThanOrEqual(100); expect(fitText('W'.repeat(40), 100)).toMatch(/\.\.\.$/);
+ });
+ it('keeps every answer page inside the ten visible lines of the G2 text container', () => {
+  for (const input of [...examples, ...stressArtifacts]) {
+   const artifact = { ...artifactSchema.parse(input), version: 1, expiresAt: 0 };
+   for (const layout of ['split', 'answer'] as const) {
+    const width = layout === 'split' ? G2_TEXT.splitWidth : G2_TEXT.fullWidth;
+    for (let page = 0; page < render(artifact, 0, 0, layout, 1, 'session').pages; page++) {
+     const frame = render(artifact, 0, page, layout, 1, 'session'); const lines = frame.text.split('\n');
+     expect(lines.length).toBeLessThanOrEqual(G2_TEXT.maxLines); expect(frame.text.length).toBeLessThanOrEqual(900);
+     expect(lines.every(line => textWidth(line) <= width)).toBe(true);
+    }
+   }
+  }
+ });
+ it('labels the answer with its speaker and puts the page marker in the header', () => {
+  const frame = new StateStore().upsert({ ...examples[1]!, speaker: 'Claude', answer: 'word '.repeat(200) }).frame;
+  expect(frame.pages).toBeGreaterThan(1); expect(frame.text.split('\n')[0]).toBe(`CLAUDE  1/${frame.pages}`);
+  expect(new StateStore().upsert(examples[1]!).frame.text.startsWith('AGENT\n\n')).toBe(true);
+  expect(artifactSchema.safeParse({ ...examples[1], speaker: 'x'.repeat(17) }).success).toBe(false);
  });
 });
 describe('state and artifact lifecycle', () => {
@@ -75,5 +103,17 @@ describe('state and artifact lifecycle', () => {
   for (let i = 0; i < 20; i++) store.acknowledge({ clientId: `client-${i}`, sessionId: store.sessionId, revision: store.snapshot().revision, status: 'browser-rendered', mode: 'preview' });
   expect(store.snapshot().deliveries).toHaveLength(8);
   expect(() => store.acknowledge({ clientId: 'x', sessionId: store.sessionId, revision: 0, status: 'bridge-accepted', mode: 'even' })).toThrow('State changed');
+ });
+ it('turns a tap on a choices artifact into a choice event without toggling the pane', () => {
+  const store = new StateStore(); const choices = examples.find(example => example.template === 'choices')!;
+  let state = store.upsert(choices); let count = 0;
+  const send = (type: 'next' | 'previous' | 'select' | 'back') => (state = store.input({ type, eventId: `input-${count++}`, sessionId: state.sessionId, revision: state.revision }));
+  send('next'); send('next'); expect(state.frame.scroll).toBe(2);
+  send('select'); expect(state.frame.layout).toBe('split'); expect(state.frame.chosen).toBe(2);
+  expect(store.events(0).events.at(-1)).toMatchObject({ type: 'choice', inputType: 'select', choice: 2, artifactId: choices.id, artifactVersion: 1 });
+  for (let i = 0; i < 12; i++) send('next');
+  expect(state.frame.scroll).toBe(maxScroll(state.frame.artifact!)); expect(state.frame.chosen).toBe(2);
+  send('back'); expect(state.frame.layout).toBe('answer'); send('select'); expect(state.frame.layout).toBe('split');
+  state = store.upsert(choices); expect(state.frame.chosen).toBeNull(); expect(state.artifacts[0]!.version).toBe(2);
  });
 });

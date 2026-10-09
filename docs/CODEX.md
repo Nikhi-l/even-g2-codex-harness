@@ -38,7 +38,7 @@ A local stdio process can also relay to a hosted server when both `G2_HARNESS_UR
 
 | Tool | Purpose |
 | --- | --- |
-| `artifact_templates` | Exact JSON schemas for the seven templates |
+| `artifact_templates` | Exact JSON schemas for every template |
 | `show_artifact` | Publish/update `{artifact, expectedSessionId?, expectedRevision?}` |
 | `set_artifact_layout` | Set `split` or `answer` |
 | `display_select` | Select an unexpired artifact by ID |

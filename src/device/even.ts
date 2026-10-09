@@ -123,16 +123,24 @@ export class EvenAdapter implements DisplayAdapter {
         this.ready = true;
         this.layout = shape; this.previousText = content; this.previousTileSignature = '';
       } else if (content !== this.previousText) {
-        // Retain source incremental semantics: append a growing answer, pad a shrinking one.
-        const append = content.startsWith(this.previousText) && content.length > this.previousText.length;
-        const next = append ? content.slice(this.previousText.length) : content.padEnd(Math.max(content.length, this.previousText.length), ' ');
-        const accepted = await timeout(this.bridge.textContainerUpgrade(new TextContainerUpgrade({
-          ...CONTAINER, contentOffset: append ? this.previousText.length : 0, contentLength: next.length, content: next,
-        })), this.timeoutMs, 'Text update timed out. Reopen the Even Hub app before retrying.');
-        if (accepted !== true) throw new Error('Text update rejected. Reopen the Even Hub app.');
+        if (content.length >= this.previousText.length) {
+          // Rewrite the whole text from offset 0. It covers the old buffer whether the firmware overwrites
+          // in place or replaces the content, so nothing stale survives. Offset appends mis-render
+          // (Display_Mcp disabled them after device testing; the simulator shows only the tail).
+          const accepted = await timeout(this.bridge.textContainerUpgrade(new TextContainerUpgrade({
+            ...CONTAINER, contentOffset: 0, contentLength: content.length, content,
+          })), this.timeoutMs, 'Text update timed out. Reopen the Even Hub app before retrying.');
+          if (accepted !== true) throw new Error('Text update rejected. Reopen the Even Hub app.');
+        } else {
+          // Shorter text replaces the page instead. Space padding wraps into hidden lines, which makes the
+          // firmware scroll the text container and steal the wearer's scroll gesture from the artifact.
+          const accepted = await timeout(this.bridge.rebuildPageContainer(new RebuildPageContainer(structure)), this.timeoutMs, 'Layout update timed out. Reopen the Even Hub app.');
+          if (accepted !== true) throw new Error('Layout update rejected. Reopen the Even Hub app.');
+          this.previousTileSignature = '';
+        }
         this.previousText = content;
       }
-      const signature = frame.artifact ? JSON.stringify([frame.artifact.template, frame.artifact.data, frame.scroll]) : '';
+      const signature = frame.artifact ? JSON.stringify([frame.artifact.template, frame.artifact.data, frame.scroll, frame.chosen]) : '';
       if (split && signature !== this.previousTileSignature) {
         const tiles = await timeout(this.tiles(frame), this.timeoutMs, 'Artifact encoding timed out');
         if (tiles.length !== 2) throw new Error('Expected two artifact tiles');

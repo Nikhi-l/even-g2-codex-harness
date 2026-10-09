@@ -11,9 +11,11 @@ A standalone, open-source artifact display layer for **Even Realities G2**. Give
 
 ## What is included
 
-- The original **seven artifact templates**: list, schedule, image, image grid, thumbnail list, card, and calendar.
+- **Twelve artifact templates**: the original list, schedule, image, image grid, thumbnail list, card and calendar, plus checklist, choices, stat, directions and code.
 - A 576 × 288 split surface: native answer text on the left, a 288 × 288 canvas artifact on the right, encoded as two 288 × 144 image tiles.
-- Stable page structure, incremental answer updates, changed-artifact rendering, scroll, and open/close layout controls.
+- **Screen rules measured in the official Even Hub simulator:** answer text wraps by the firmware font's pixel widths and never exceeds the ten visible lines, so the firmware never scrolls the text and steals the wearer's scroll; tiles are tone-compensated so dark fills stay dark on the glasses. See [DISPLAY.md](docs/DISPLAY.md).
+- **Claude Code support:** the same MCP tools, an automatic session HUD from Claude Code hooks, and an opt-in channel that turns a tap on a `choices` artifact into a message in the live session. See [Claude on the glasses](docs/CLAUDE.md).
+- Stable page structure, full-text answer updates (a rebuild when text shrinks), changed-artifact rendering, scroll, and open/close layout controls.
 - Authenticated **stdio and Streamable HTTP MCP**, strict template schemas, session/revision checks, expiry, bounded input history, and delivery receipts.
 - A no-key browser demo, editable payloads, gallery, real Even Hub SDK adapter, Docker/Caddy hosting recipe, and Even Hub packaging scripts.
 
@@ -42,9 +44,16 @@ npm run demo
 
 Choose a template, edit its JSON and answer, then **Show artifact**. Scroll moves the artifact window. Tap toggles the artifact pane. In the desktop demo, the simulated double tap closes the pane; on a connected G2, double tap opens the system exit dialog. In full-width answer mode, scroll pages the answer. **Clear display** blanks both panes; unexpired artifacts can be selected again through MCP.
 
-## Connect Codex
+## Connect Codex or Claude
 
-Start the relay, then register the local MCP server from this checkout:
+Start the relay, then register the local MCP server from this checkout. For Claude Code:
+
+```bash
+claude mcp add even-g2 -- node "$(pwd)/dist/server/mcp.js"
+npm run claude:setup   # prints the hook settings for the session HUD and the channel command
+```
+
+[Claude on the glasses](docs/CLAUDE.md) covers the HUD, the glasses-to-Claude channel, Claude Desktop and the phone app. For Codex:
 
 ```bash
 codex mcp add even-g2 -- node "$(pwd)/dist/server/mcp.js"
@@ -69,9 +78,13 @@ For self-hosted use, connect your MCP client to `https://YOUR_DOMAIN/mcp` with t
 
 *The right pane holds four bundled images inside one 288 × 288 canvas. G2 receives that canvas as two 288 × 144 grayscale PNG tiles, not four full-color images. [Top tile](docs/assets/image-grid-gray4-top.png) · [Bottom tile](docs/assets/image-grid-gray4-bottom.png). The tile files are exact encoder output with at most sixteen brightness levels. The green browser preview suggests the monochrome display; physical comparison remains pending.*
 
-![All seven extracted artifact templates rendered with safe example data](docs/assets/template-gallery.jpg)
+![All twelve artifact templates rendered with safe example data](docs/assets/template-gallery.png)
 
 *Genuine renders from the template registry. The four image assets are bundled diagram fixtures, not personal photos or remote downloads.*
+
+![The same templates on the simulated glasses](docs/assets/simulator-glasses.png)
+
+*Glasses framebuffers captured from the official Even Hub simulator 0.9.5 through the real SDK: answer text in the firmware font on the left, compensated tiles on the right. Simulator output, not a lens photograph.*
 
 | Template | Data | Behavior |
 | --- | --- | --- |
@@ -82,6 +95,11 @@ For self-hosted use, connect your MCP client to `https://YOUR_DOMAIN/mcp` with t
 | `list_thumbnails` | Image keys, primary/secondary labels | Scrollable five-row window |
 | `card` | Title, subtitle, optional image, key/value rows | Structured detail card |
 | `calendar` | Explicit month and marked days | Monday-first month view |
+| `checklist` | Items with `todo`, `active`, `done` or `blocked` | Progress bar, scrollable seven-row window |
+| `choices` | Question and two to nine options | Scroll moves the highlight; tap records a choice event |
+| `stat` | One to three numbers with unit, delta and trend | Large value, sparkline |
+| `directions` | Destination, ETA and turn-by-turn steps | Scroll advances the current step |
+| `code` | Lines of code or a diff hunk | Monospace with `+`/`-` gutter, scrollable 13-line window |
 
 [Phone screenshot](docs/assets/phone-preview.jpg) · [Template authoring](docs/TEMPLATES.md) · [Source extraction map](docs/PROVENANCE.md)
 
@@ -113,6 +131,7 @@ The manifest generator embeds only a public relay origin and exact network white
 ```bash
 npm run check          # types, lint, unit/integration tests, build, file audit
 npm run test:browser   # browser regression suite (install Chromium first)
+npm run smoke:simulator  # glasses screenshots and overflow check in the Even Hub simulator (set EVENHUB_SIMULATOR)
 npm audit
 npm run pack:g2        # demo-only Even Hub package; no network permissions
 ```

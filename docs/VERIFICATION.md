@@ -55,3 +55,16 @@ The handoff commit uses `[skip ci]` to avoid starting the repository's push/pull
 The handoff also includes the Sites source package and a fix for stale connection/Forget races discovered during review. Connection attempts are generation-guarded; adopting a new relay invalidates prior-relay operations, and Forget cancels pending restoration/settings intent without disconnecting an established session. Six browser regression cases were added, bringing discovery to 15 browser tests. These cases were collected but not executed in a browser because of the launch restriction above. Six additional executable in-memory checks of the actual handlers passed during review; they are supplementary evidence, not browser acceptance.
 
 The Sites package adds 16 automated tests, including the pinned MCP SDK and existing controller roundtrip, SQLite-backed SQL execution, owner isolation, concurrent compare-and-swap, duplicate input handling, expiry, bounded receipts/events, same-origin client transport and overlay preservation/refusal. Root `npm run check` now includes Sites typecheck, tests and build; scoped lint covers its source, tests and installer. Managed Sites authentication, hosted D1 and real Even WebView acceptance remain unverified. Private data access defaults disabled until the documented hosting identity gate is verified.
+
+## Mac re-verification before merge, 2026-10-10
+
+Commit `69db0c6` was checked on macOS (Apple silicon) with Node 22.20.0 and npm 10.9.3 from a fresh `npm ci --ignore-scripts`.
+
+- `npm run check` passed: strict types, ESLint, 44 root unit/integration tests, production build, public-file audit, and the Sites package typecheck, 16 tests and bundle build. `npm audit --audit-level=high` reported zero vulnerabilities.
+- **Browser acceptance passed for the first time:** after `npx playwright install chromium` (headless shell 153.0.8010.12, revision 1243), all 15 Playwright cases ran and passed in 8.7 s. This replaces the earlier blocked status.
+- The stdio controller demo completed publish, replace, observe, clear, select and delete against a local relay.
+- `npm run pack:g2` produced the 83,989-byte demo package stamped with SDK 0.0.14 and app floor 2.2.9.
+- A headless Claude Code 2.1.236 session, connected to `dist/server/mcp.js` through `--mcp-config`, called `display_status` and a guarded `show_artifact`. The relay reported the new revision and active artifact.
+- The official Even Hub simulator 0.9.5 loaded the relay UI with `?evenhub=1`. Its 576 × 288 glasses framebuffer showed the answer pane and the list artifact, the relay recorded a current `bridge-accepted` receipt, and simulated clicks reached the relay as `select` inputs.
+
+The simulator is official vendor software but it is not hardware evidence. Physical G2 display, input, BLE latency and background behavior remain unverified.

@@ -5,13 +5,13 @@
 `packages/sites-mcp` is a real server adapter, not just an architecture proposal:
 
 - Stateless JSON-RPC MCP at `POST /mcp`: initialize, ping, tool discovery and tool calls. It interoperates with the pinned MCP SDK's `StreamableHTTPClientTransport` and the existing `ArtifactController`.
-- The same nine display tools, seven artifact schemas, registered image aliases and deterministic renderer as the local harness. Mutations require both the current session and revision. Events require the current session.
+- The same nine display tools, twelve artifact schemas, registered image aliases and deterministic renderer as the local harness. Mutations require both the current session and revision. Events require the current session.
 - Durable D1 state keyed only by the authenticated, Site-scoped user ID. Every read/write is owner-bound. Compare-and-swap covers concurrent mutations, receipts and input deduplication.
 - Bounds: 20 artifacts, 100 journal events, 256 recent input IDs, 8 receipts, 32 KiB request bodies, 256 KiB serialized state. No URL fetching, arbitrary rendering code or unregistered images.
 - Same-origin `/api/state`, `/api/input`, `/api/delivery` and a small `SitesTransport` browser client. No bearer token, service credential or identity value is accepted by that client.
 - A build/installer that overlays the current Sites Vinext starter while retaining its Sites build integration, existing manifest fields and schema. It produces a self-contained server bundle and browser transport; it does not create accounts, mint credentials, publish a Site or modify the user's computer.
 
-This adapter changes transport and persistence. The existing Even adapter, sequential render queue, seven canvas templates and local relay remain unchanged.
+This adapter changes transport and persistence. The existing Even adapter, sequential render queue, canvas templates and local relay remain unchanged. Gestures go through the same `navigate()` as the local store, so a tap on `choices` produces the same `choice` event here.
 
 ## What has and has not been verified
 

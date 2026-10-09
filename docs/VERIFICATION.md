@@ -68,3 +68,14 @@ Commit `69db0c6` was checked on macOS (Apple silicon) with Node 22.20.0 and npm 
 - The official Even Hub simulator 0.9.5 loaded the relay UI with `?evenhub=1`. Its 576 × 288 glasses framebuffer showed the answer pane and the list artifact, the relay recorded a current `bridge-accepted` receipt, and simulated clicks reached the relay as `select` inputs.
 
 The simulator is official vendor software but it is not hardware evidence. Physical G2 display, input, BLE latency and background behavior remain unverified.
+
+## Display, templates and Claude Code, 2026-10-10
+
+Checked on macOS with Node 22.20.0 after merging #1.
+
+- `npm run check`: 53 root tests (including pixel-budget checks over every example and worst-case fixture, choice events, the tone table, the HUD reducer, the hook against a live relay, and the channel through a real MCP client) and 17 Sites tests. `npm audit` reported zero vulnerabilities.
+- `npm run test:browser`: 17 of 17, including the twelve-template gallery, the worst-case gallery edge check, and phone widths of 390 and 360 px.
+- Official Even Hub simulator 0.9.5: font, line and gray-level response measured as described in [DISPLAY.md](DISPLAY.md). `npm run smoke:simulator` published 25 artifacts (12 examples, 13 worst cases) through the real SDK, received `bridge-accepted` for each, and found no text overflow in 50 split and full-width glasses screens.
+- Before the fixes the simulator showed the old answer pages reaching 13 lines, offset appends showing only the tail, trailing-space padding producing a scrollbar, and bright fills hiding text (calendar marked days). After them none of these appear.
+- Headless Claude Code 2.1.236 (Sonnet) published through `dist/server/mcp.js` and the answer header read `CLAUDE`. With the hooks from `npm run claude:setup` (run synchronously under `-p`), a real session produced five HUD updates ending in a `DONE` card with its final answer; the simulator recorded `bridge-accepted`.
+- Not run: a live interactive channel session (channels do not load under `-p`, and the interactive CLI on this Mac was still in first-run setup), physical G2 hardware, and any hosted relay.

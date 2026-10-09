@@ -13,6 +13,11 @@ import "./templates/image-grid.js";
 import "./templates/list-thumbnails.js";
 import "./templates/card.js";
 import "./templates/calendar.js";
+import "./templates/checklist.js";
+import "./templates/choices.js";
+import "./templates/stat.js";
+import "./templates/directions.js";
+import "./templates/code.js";
 
 export {
   registerTemplate,

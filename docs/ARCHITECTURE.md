@@ -38,7 +38,8 @@ sequenceDiagram
 
 | Module | Responsibility | Must not do |
 | --- | --- | --- |
-| `src/core/contracts.ts` | Seven strict template schemas, bounds, capabilities | Import browser or provider runtime |
+| `src/core/contracts.ts` | Twelve strict template schemas, bounds, capabilities | Import browser or provider runtime |
+| `src/core/text.ts` | Measured G2 font advances, pixel wrapping and the ten-line budget | Depend on a browser font |
 | `src/core/store.ts` | Artifact lifecycle, revision conflicts, expiry, input journal | Access disk, network, microphone, or shell |
 | `src/core/render.ts` | Deterministic answer wrapping, paging, scroll bounds | Call the SDK |
 | `src/artifacts/` | Extracted canvas template registry and draw functions | Know about Codex, customers, or relay tokens |
@@ -48,6 +49,7 @@ sequenceDiagram
 | `src/server/http.ts` | Auth, allowed origins/hosts, request bounds, REST/MCP | Serve files outside built web root |
 | `src/server/mcp-tools.ts` | MCP schemas and bounded relay calls | Execute model-generated code |
 | `src/controller/` | Explicit guarded MCP writes, event observation, synthetic example | Start model turns, treat input as permission, retry uncertain writes |
+| `src/claude/` | Claude Code session HUD (hooks) and the choice channel | Approve tools, block a session, or forward another session's choices |
 | `src/web/` | Phone console, demo, editor, gallery, opt-in runtime connection | Bundle bearer tokens or persist artifact content |
 | `src/device/settings.ts` | Validate optional phone settings against the exact packaged HTTPS origin | Fetch arbitrary origins or store artifact/input history |
 
@@ -57,7 +59,7 @@ An artifact has a stable `id`, a registered `template`, validated `data`, an ans
 
 Every display transition increments a relay revision. Optional `expectedSessionId` and `expectedRevision` together prevent stale agent writes across state changes and relay restarts. The controller always sends both; omitting them preserves compatibility for older clients but provides no stale-write protection. Inputs and delivery receipts require both the current session UUID and revision. Input IDs are deduplicated in a bounded 256-entry window. A restart gives a new session UUID and empty state; old inputs cannot operate on a new session with a coincidentally equal revision.
 
-Scroll moves one list/schedule/thumbnail row at a time. Other artifact templates remain fixed. Tap toggles split/full-answer layout. Browser/REST `back` closes the artifact pane and retains `inputType: back` in the journal. Native G2 double tap is intercepted by the phone adapter and invokes `shutDownPageContainer(1)` after pending SDK operations, requesting the host-owned system exit dialog. That native exit is not a relay navigation event or proof that the host closed the WebView. Full-answer scroll pages wrapped text. These operations never run a tool, shell command, or model turn. `display_events` retains 100 lifecycle/input events, returns the session UUID and optional original `inputType`, and reports cursor truncation. An optional expected-session guard rejects a cursor belonging to another relay lifetime. Observers must refresh/rebaseline after a restart or journal truncation; missing input is never replayed as permission.
+Scroll moves one list/schedule/thumbnail row at a time. Other artifact templates remain fixed. Tap toggles split/full-answer layout, except on a split `choices` artifact, where it records a `choice` event (index and artifact version) and marks the option. `navigate()` in `src/core/render.ts` is the one transition function for the local store and the Sites adapter. Browser/REST `back` closes the artifact pane and retains `inputType: back` in the journal. Native G2 double tap is intercepted by the phone adapter and invokes `shutDownPageContainer(1)` after pending SDK operations, requesting the host-owned system exit dialog. That native exit is not a relay navigation event or proof that the host closed the WebView. Full-answer scroll pages wrapped text. These operations never run a tool, shell command, or model turn. `display_events` retains 100 lifecycle/input events, returns the session UUID and optional original `inputType`, and reports cursor truncation. An optional expected-session guard rejects a cursor belonging to another relay lifetime. Observers must refresh/rebaseline after a restart or journal truncation; missing input is never replayed as permission.
 
 Clear blanks the surface while retaining unexpired artifacts. Delete removes an artifact and blanks it if active. Expiration removes content on the relay and the client also checks expiry. Network loss triggers an attempted blank after ten seconds. A suspended phone, disconnected Bluetooth link, or already failed SDK cannot guarantee immediate clearing: close the app/device display manually if needed.
 
@@ -67,11 +69,11 @@ The source implementation's concrete arrangement is retained: answer at x=0 and 
 
 Split mode uses one 288×288 native text container and two 288×144 PNG image containers. Answer-only mode uses one 576×288 native text container. Exactly one text container captures events. IDs/names are fixed and unique, names are under 16 characters, and z-order values are all omitted.
 
-Startup must return `StartUpPageCreateResult.success` (0). An invalid startup result is an error, not evidence of an existing usable surface. Layout changes use `rebuildPageContainer`; switching artifact templates with the same shape does not rebuild. Appended answer text uses an offset/tail update, while rewrites pad to clear the old tail. Artifact data or scroll changes regenerate the two tiles; answer-only changes skip images.
+Startup must return `StartUpPageCreateResult.success` (0). An invalid startup result is an error, not evidence of an existing usable surface. Layout changes use `rebuildPageContainer`; switching artifact templates with the same shape does not rebuild. Answer text that grows or keeps its length is rewritten whole from offset 0; shorter text triggers a rebuild. Offset appends and space padding are not used: the simulator replaces the whole text on every upgrade, and padding wraps into hidden lines that make the firmware scroll (see [DISPLAY.md](DISPLAY.md)). Artifact data or scroll changes regenerate the two tiles; answer-only changes skip images.
 
 Every SDK operation is awaited. Rendering, system exit, and phone setting reads/writes share one serialized operation chain. A setting timeout also closes the adapter because the unresolved SDK call cannot be cancelled. A single queue coalesces pending revisions to the latest snapshot. Image results are normalized with the official SDK helpers. A rejected call or eight-second timeout stops the adapter, unsubscribes events, and asks the wearer to reopen Even Hub. Timed-out SDK work cannot be cancelled; automatic overlapping retries would make state unknowable. Reopening establishes a fresh surface.
 
-The seven template draw functions are deterministic given explicit data, loaded bundled assets, scroll, and the browser's font metrics. The calendar requires an explicit month. Preview fonts and color are approximations of the device. The SDK receives grayscale-quantized PNGs; canvas UI is not an optical simulator.
+The template draw functions are deterministic given explicit data, loaded bundled assets, scroll, the chosen option, and the browser's font metrics. The calendar requires an explicit month. Preview fonts and color are approximations of the device. The SDK receives Gray4 PNGs whose levels are compensated for the display response measured in the Even Hub simulator; the browser preview shows the intended look and is not an optical simulator.
 
 ## Delivery vocabulary
 

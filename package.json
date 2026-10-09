@@ -24,6 +24,9 @@
     "qr:g2": "evenhub qr --http --port 8787",
     "package:hosted": "node scripts/package-hosted.mjs",
     "example:controller": "node dist/controller/example.js",
+    "claude:setup": "node scripts/claude-setup.mjs",
+    "smoke:simulator": "node scripts/simulator-smoke.mjs test-results/simulator --stress",
+    "capture:gallery": "node scripts/capture-gallery.mjs",
     "check:sites": "npm --prefix packages/sites-mcp run check"
   },
   "dependencies": {

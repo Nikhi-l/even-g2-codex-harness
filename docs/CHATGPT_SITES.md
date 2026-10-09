@@ -8,7 +8,7 @@ Keep reasoning in the user's existing ChatGPT conversation. Expose a small authe
 
 A possible tool surface is `set_display`, `navigate_display`, `clear_display`, and `get_delivery_status`. These friendly names are design proposals, not installed tools. The implemented Sites package instead preserves the same nine tool names as the local harness, including `show_artifact`, `display_clear` and `display_status`, for controller compatibility. See [CONTROLLER.md](CONTROLLER.md) and [the Sites implementation guide](sites-mcp.md).
 
-Reuse `src/core/contracts.ts`, the seven `src/artifacts/` templates, `src/device/tiles.ts`, the device adapter and their tests. Adapt Node HTTP/stdio transport, filesystem assumptions and process-local storage to an edge-compatible request handler and durable records. Do not introduce a new renderer or arbitrary HTML/JavaScript payloads.
+Reuse `src/core/contracts.ts`, the `src/artifacts/` templates, `src/device/tiles.ts`, the device adapter and their tests. Adapt Node HTTP/stdio transport, filesystem assumptions and process-local storage to an edge-compatible request handler and durable records. Do not introduce a new renderer or arbitrary HTML/JavaScript payloads.
 
 Suggested records contain server-derived owner ID, owned device ID, revision, validated artifact payload, expiry, idempotency key, received revision and SDK-accepted revision. Use transactional optimistic concurrency and owner/device-scoped deduplication. A retry must not generate duplicate commands. Clear, expiry and reconnect must prevent stale content replay.
 

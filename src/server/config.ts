@@ -1,10 +1,14 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 export const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
-export const connectionFile = fileURLToPath(new URL('../../.local/connection.json', import.meta.url));
+// Tests point this elsewhere so a fixed test token never replaces the private local connection.
+export const connectionFile = process.env.G2_HARNESS_CONNECTION_FILE
+  ? resolve(process.env.G2_HARNESS_CONNECTION_FILE)
+  : fileURLToPath(new URL('../../.local/connection.json', import.meta.url));
 const connectionSchema = z.strictObject({ url: z.string().url(), token: z.string().min(32) });
 export async function readConnection() {
   if (process.env.G2_HARNESS_URL && process.env.G2_HARNESS_TOKEN) {
@@ -21,7 +25,7 @@ export async function serverConnection(url: string) {
     catch { token = randomBytes(32).toString('hex'); }
   }
   const connection = connectionSchema.parse({ url, token });
-  await mkdir(new URL('../../.local/', import.meta.url), { recursive: true, mode: 0o700 });
+  await mkdir(dirname(connectionFile), { recursive: true, mode: 0o700 });
   await writeFile(connectionFile, JSON.stringify(connection), { mode: 0o600 });
   return connection;
 }

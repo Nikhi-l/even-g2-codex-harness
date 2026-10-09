@@ -1,5 +1,5 @@
 import { artifactSchema, deliverySchema, inputSchema, layoutSchema, type Artifact, type Delivery, type HarnessEvent, type Snapshot } from '../../../src/core/contracts.js';
-import { maxScroll, render } from '../../../src/core/render.js';
+import { navigate, render } from '../../../src/core/render.js';
 
 export class OperationError extends Error {
   constructor(readonly code: string, message: string) { super(message); }
@@ -7,25 +7,29 @@ export class OperationError extends Error {
 export interface State {
   sessionId: string; revision: number; activeId: string | null; artifacts: Artifact[];
   scroll: number; answerPage: number; layout: 'split' | 'answer';
+  /** Chosen option on an active `choices` artifact. Absent in rows written before choices existed. */
+  chosen?: number | null;
   sequence: number; journal: HarnessEvent[]; seenInputs: string[]; deliveries: Delivery[];
 }
 export const freshState = (): State => ({ sessionId: crypto.randomUUID(), revision: 0, activeId: null,
-  artifacts: [], scroll: 0, answerPage: 0, layout: 'split', sequence: 0, journal: [], seenInputs: [], deliveries: [] });
-function change(s: State, type: string, now: number, inputType?: HarnessEvent['inputType']) {
+  artifacts: [], scroll: 0, answerPage: 0, layout: 'split', chosen: null, sequence: 0, journal: [], seenInputs: [], deliveries: [] });
+function change(s: State, type: string, now: number, inputType?: HarnessEvent['inputType'], choice?: number) {
   s.revision++; s.deliveries = [];
-  s.journal.push({ sequence: ++s.sequence, at: now, type, artifactId: s.activeId, revision: s.revision, ...(inputType ? { inputType } : {}) });
+  const version = choice === undefined ? undefined : s.artifacts.find(a => a.id === s.activeId)?.version;
+  s.journal.push({ sequence: ++s.sequence, at: now, type, artifactId: s.activeId, revision: s.revision,
+    ...(inputType ? { inputType } : {}), ...(choice === undefined ? {} : { choice, artifactVersion: version }) });
   s.journal = s.journal.slice(-100);
 }
 export function expire(s: State, now: number): boolean {
   const live = s.artifacts.filter(a => a.expiresAt > now);
   if (live.length === s.artifacts.length) return false;
   s.artifacts = live;
-  if (!live.some(a => a.id === s.activeId)) { s.activeId = null; s.scroll = 0; s.answerPage = 0; }
+  if (!live.some(a => a.id === s.activeId)) { s.activeId = null; s.scroll = 0; s.answerPage = 0; s.chosen = null; }
   change(s, 'expired', now); return true;
 }
 export function snapshot(s: State): Snapshot {
   return structuredClone({ sessionId: s.sessionId, revision: s.revision, activeId: s.activeId,
-    artifacts: s.artifacts, frame: render(s.artifacts.find(a => a.id === s.activeId), s.scroll, s.answerPage, s.layout, s.revision, s.sessionId),
+    artifacts: s.artifacts, frame: render(s.artifacts.find(a => a.id === s.activeId), s.scroll, s.answerPage, s.layout, s.revision, s.sessionId, s.chosen ?? null),
     deliveries: s.deliveries, latestEventSequence: s.sequence });
 }
 function expect(s: State, revision: unknown, session: unknown) {
@@ -48,14 +52,10 @@ export function operate(s: State, name: string, args: Record<string, unknown>, n
     s.seenInputs.push(input.eventId); s.seenInputs = s.seenInputs.slice(-256);
     const artifact = s.artifacts.find(a => a.id === s.activeId);
     if (!artifact) return snapshot(s);
-    if (input.type === 'back' || input.type === 'select') {
-      s.layout = input.type === 'back' || s.layout === 'split' ? 'answer' : 'split'; s.answerPage = 0;
-    } else {
-      const direction = input.type === 'next' ? 1 : -1;
-      if (s.layout === 'split') s.scroll = Math.min(Math.max(s.scroll + direction, 0), maxScroll(artifact));
-      else s.answerPage = Math.min(Math.max(s.answerPage + direction, 0), snapshot(s).frame.pages - 1);
-    }
-    change(s, input.type === 'back' || input.type === 'select' ? `layout:${s.layout}` : `input:${input.type}`, now, input.type); return snapshot(s);
+    const { next, event, choice } = navigate(artifact, { layout: s.layout, scroll: s.scroll, answerPage: s.answerPage }, input.type);
+    s.layout = next.layout; s.scroll = next.scroll; s.answerPage = next.answerPage;
+    if (choice !== undefined) s.chosen = choice;
+    change(s, event, now, input.type, choice); return snapshot(s);
   }
   if (name === 'delivery') {
     const receipt = deliverySchema.parse(args); expect(s, receipt.revision, receipt.sessionId);
@@ -68,16 +68,16 @@ export function operate(s: State, name: string, args: Record<string, unknown>, n
       const a = artifactSchema.parse(args.artifact); const previous = s.artifacts.find(v => v.id === a.id);
       if (!previous && s.artifacts.length >= 20) throw new OperationError('LIMIT', 'Delete an artifact before adding another');
       s.artifacts = [...s.artifacts.filter(v => v.id !== a.id), { ...a, version: (previous?.version ?? 0) + 1, expiresAt: now + a.ttlSeconds * 1000 }];
-      s.activeId = a.id; s.scroll = 0; s.answerPage = 0; s.layout = 'split'; change(s, 'published', now); break;
+      s.activeId = a.id; s.scroll = 0; s.answerPage = 0; s.layout = 'split'; s.chosen = null; change(s, 'published', now); break;
     }
     case 'display_select':
       if (!s.artifacts.some(a => a.id === args.id)) throw new OperationError('NOT_FOUND', 'Artifact missing or expired');
-      s.activeId = args.id as string; s.scroll = 0; s.answerPage = 0; s.layout = 'split'; change(s, 'selected', now); break;
-    case 'display_clear': s.activeId = null; s.scroll = 0; s.answerPage = 0; change(s, 'cleared', now); break;
+      s.activeId = args.id as string; s.scroll = 0; s.answerPage = 0; s.layout = 'split'; s.chosen = null; change(s, 'selected', now); break;
+    case 'display_clear': s.activeId = null; s.scroll = 0; s.answerPage = 0; s.chosen = null; change(s, 'cleared', now); break;
     case 'display_delete':
       if (!s.artifacts.some(a => a.id === args.id)) throw new OperationError('NOT_FOUND', 'Artifact missing or expired');
       s.artifacts = s.artifacts.filter(a => a.id !== args.id);
-      if (s.activeId === args.id) { s.activeId = null; s.scroll = 0; s.answerPage = 0; }
+      if (s.activeId === args.id) { s.activeId = null; s.scroll = 0; s.answerPage = 0; s.chosen = null; }
       change(s, 'deleted', now); break;
     case 'set_artifact_layout': s.layout = layoutSchema.parse(args.layout); s.answerPage = 0; change(s, `layout:${s.layout}`, now); break;
     default: throw new OperationError('UNKNOWN_TOOL', 'Unknown tool');

@@ -4,6 +4,7 @@ import { EvenAdapter, normalizeInput, type Bridge } from '../src/device/even.js'
 import { RenderQueue } from '../src/device/adapter.js';
 import { StateStore } from '../src/core/store.js';
 import { examples } from '../src/core/examples.js';
+import { COMPENSATED, DISPLAYED_LEVELS } from '../src/device/tiles.js';
 function setup() {
  const unsubscribe = vi.fn();
  const bridge: Bridge = { createStartUpPageContainer: vi.fn(async () => StartUpPageCreateResult.success), rebuildPageContainer: vi.fn(async () => true), textContainerUpgrade: vi.fn(async () => true), updateImageRawData: vi.fn(async () => ImageRawDataUpdateResult.success), onEvenHubEvent: vi.fn(() => unsubscribe), shutDownPageContainer: vi.fn(async () => true), getLocalStorage: vi.fn(async () => ''), setLocalStorage: vi.fn(async () => true) };
@@ -73,16 +74,28 @@ describe('Even adapter', () => {
   await adapter.render(frame); expect(tiles).toHaveBeenCalledTimes(1); expect(bridge.updateImageRawData).toHaveBeenCalledTimes(2);
   expect(bridge.createStartUpPageContainer).toHaveBeenCalledTimes(1); expect(bridge.textContainerUpgrade).not.toHaveBeenCalled();
  });
- it('updates only answer text and clears stale text on shrink; rebuilds for layout changes', async () => {
+ it('rewrites growing text from offset 0 and rebuilds shorter text instead of padding it', async () => {
   const { adapter, bridge, frame, store } = setup();
   await adapter.render(frame);
   await adapter.render({ ...frame, text: frame.text + ' More', revision: 2 });
-  expect(vi.mocked(bridge.textContainerUpgrade).mock.calls[0]![0].contentOffset).toBe(frame.text.length);
-  await adapter.render({ ...frame, text: 'Short', revision: 3 });
-  expect(vi.mocked(bridge.textContainerUpgrade).mock.calls[1]![0].content?.trim()).toBe('Short');
+  const grow = vi.mocked(bridge.textContainerUpgrade).mock.calls[0]![0];
+  expect([grow.contentOffset, grow.contentLength, grow.content]).toEqual([0, frame.text.length + 5, frame.text + ' More']);
   expect(bridge.updateImageRawData).toHaveBeenCalledTimes(2);
-  await adapter.render(store.setLayout('answer').frame); expect(bridge.rebuildPageContainer).toHaveBeenCalledTimes(1);
-  await adapter.render(store.setLayout('split').frame); expect(bridge.updateImageRawData).toHaveBeenCalledTimes(4);
+  // Padding a shorter text with spaces would wrap into hidden lines and make the firmware scroll.
+  await adapter.render({ ...frame, text: 'Short', revision: 3 });
+  expect(bridge.textContainerUpgrade).toHaveBeenCalledOnce();
+  expect(vi.mocked(bridge.rebuildPageContainer).mock.calls[0]![0].textObject?.[0]?.content).toBe('Short');
+  expect(bridge.updateImageRawData).toHaveBeenCalledTimes(4);
+  await adapter.render(store.setLayout('answer').frame); expect(bridge.rebuildPageContainer).toHaveBeenCalledTimes(2);
+  await adapter.render(store.setLayout('split').frame); expect(bridge.updateImageRawData).toHaveBeenCalledTimes(6);
+ });
+ it('redraws the artifact tiles when the wearer makes a choice', async () => {
+  const { adapter, bridge, tiles } = setup();
+  const store = new StateStore(); const state = store.upsert(examples.find(example => example.template === 'choices')!);
+  await adapter.render(state.frame);
+  const chosen = store.input({ type: 'select', eventId: 'choice-1', sessionId: state.sessionId, revision: state.revision }).frame;
+  expect(chosen.chosen).toBe(0); await adapter.render(chosen);
+  expect(tiles).toHaveBeenCalledTimes(2); expect(bridge.updateImageRawData).toHaveBeenCalledTimes(4);
  });
  it('rejects invalid startup rather than treating it as success', async () => {
   const { adapter, bridge, frame, unsubscribe } = setup();
@@ -106,5 +119,13 @@ describe('Even adapter', () => {
   const queue = new RenderQueue({ mode: 'preview', dispose() {}, async render(value) { seen.push(value.revision); if (value.revision === 1) await blocked; return { sessionId: value.sessionId, revision: value.revision, status: 'browser-rendered' }; } }, vi.fn(), vi.fn());
   queue.submit({ ...frame, revision: 1 }); queue.submit({ ...frame, revision: 2 }); queue.submit({ ...frame, revision: 3 });
   release(); await vi.waitFor(() => expect(seen).toEqual([1, 3])); queue.dispose();
+ });
+ it('compensates tile brightness for the measured display response', () => {
+  // Palette: black, panel fill, dim text, cyan, bright green (max channel of each colour).
+  const sent = [0, 0x6e, 0x91, 0xe0, 0xf7].map(value => COMPENSATED[value]!);
+  expect(sent).toEqual([0, 17, 51, 119, 136]);
+  expect(sent.map(value => DISPLAYED_LEVELS[Math.min(value / 17, 9)])).toEqual([0, 96, 157, 230, 244]);
+  expect(COMPENSATED[255]).toBe(255); expect(COMPENSATED.every(value => value % 17 === 0)).toBe(true);
+  for (let value = 1; value < 256; value++) expect(COMPENSATED[value]!).toBeGreaterThanOrEqual(COMPENSATED[value - 1]!);
  });
 });

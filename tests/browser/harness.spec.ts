@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
 const testToken = 'browser-test-only-token-00000000000000';
 
-test('gallery renders all seven genuine canvases', async ({ page }) => {
+test('gallery renders all twelve genuine canvases', async ({ page }) => {
  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
  await page.goto('/gallery.html'); await expect(page.locator('body')).toHaveAttribute('data-ready', 'true');
- await expect(page.locator('canvas')).toHaveCount(7);
+ await expect(page.locator('canvas')).toHaveCount(12);
  const rendered = await page.locator('canvas').evaluateAll(nodes => nodes.map(node => {
   const canvas = node as HTMLCanvasElement;
   const pixels = canvas.getContext('2d')!.getImageData(0,0,288,288).data;
@@ -48,8 +48,15 @@ test('authenticated relay connects and removes the token from the URL', async ({
  }).toContain('browser-rendered');
 });
 
-test('phone layout has no horizontal page overflow', async ({ page }) => {
- await page.setViewportSize({width:390,height:844}); await page.goto('/?template=calendar');
+test('worst-case data never draws into the edge of an artifact pane', async ({ page }) => {
+ const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+ await page.goto('/gallery.html?stress=1'); await expect(page.locator('body')).toHaveAttribute('data-ready', 'true');
+ expect(await page.locator('canvas').count()).toBeGreaterThan(12);
+ expect(JSON.parse(await page.locator('body').getAttribute('data-overflow') ?? '["missing"]')).toEqual([]); expect(errors).toEqual([]);
+});
+
+for (const width of [390, 360]) test(`phone layout has no horizontal page overflow at ${width} px`, async ({ page }) => {
+ await page.setViewportSize({width,height:844}); await page.goto('/?template=calendar');
  await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
  await expect(page.getByRole('button',{name:'Show artifact',exact:true})).toBeVisible();

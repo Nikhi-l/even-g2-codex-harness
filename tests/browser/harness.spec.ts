@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
 const testToken = 'browser-test-only-token-00000000000000';
 
-test('gallery renders all twelve genuine canvases', async ({ page }) => {
+test('gallery renders all sixteen genuine canvases', async ({ page }) => {
  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
  await page.goto('/gallery.html'); await expect(page.locator('body')).toHaveAttribute('data-ready', 'true');
- await expect(page.locator('canvas')).toHaveCount(12);
+ await expect(page.locator('canvas')).toHaveCount(16);
  const rendered = await page.locator('canvas').evaluateAll(nodes => nodes.map(node => {
   const canvas = node as HTMLCanvasElement;
   const pixels = canvas.getContext('2d')!.getImageData(0,0,288,288).data;

@@ -6,7 +6,11 @@ export async function paintPreview(canvas: HTMLCanvasElement, frame: DisplayFram
   if (!ctx) throw new Error('Canvas is unavailable');
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 576, 288);
   if (tile) ctx.drawImage(tile, 288, 0);
-  ctx.fillStyle = '#31f79c'; ctx.font = '500 18px Menlo, Monaco, Consolas, monospace';
-  frame.text.split('\n').forEach((line, index) => ctx.fillText(line, 8, 24 + index * 20));
-  if (tile) { ctx.fillStyle = '#123c27'; ctx.fillRect(287, 0, 1, 288); }
+  // Native text is proportional with a measured 27 px line pitch. Clip the
+  // approximation to its own pane so a browser font never covers the artifact.
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, tile ? 287 : 576, 288); ctx.clip();
+  ctx.fillStyle = '#00ff00'; ctx.font = '400 18px Arial, sans-serif';
+  frame.text.split('\n').forEach((line, index) => ctx.fillText(line, 8, 26 + index * 27));
+  ctx.restore();
+  if (tile) { ctx.fillStyle = '#004400'; ctx.fillRect(287, 0, 1, 288); }
 }

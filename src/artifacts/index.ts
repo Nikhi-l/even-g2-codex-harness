@@ -18,6 +18,7 @@ import "./templates/choices.js";
 import "./templates/stat.js";
 import "./templates/directions.js";
 import "./templates/code.js";
+import "./templates/quiet-surfaces.js";
 
 export {
   registerTemplate,

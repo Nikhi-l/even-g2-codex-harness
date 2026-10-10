@@ -21,4 +21,8 @@ export const stressArtifacts: ArtifactInput[] = [
   { id: 'stress-stat-one', template: 'stat', answer, data: { metrics: [{ label: w(24), value: w(10), unit: w(8), delta: `+${w(9)}`, trend: Array.from({ length: 32 }, (_, x) => x * x) }] } },
   { id: 'stress-directions', template: 'directions', answer, data: { destination: w(60), eta: w(16), distance: w(16), steps: Array.from({ length: 20 }, (_, index) => ({ turn: (['straight', 'left', 'right', 'slight_left', 'slight_right', 'u_turn', 'lift', 'arrive'] as const)[index % 8]!, text: w(80), detail: w(60), distance: w(12) })) } },
   { id: 'stress-code', template: 'code', answer, data: { title: w(80), language: w(16), lines: Array.from({ length: 60 }, (_, index) => ({ text: ' '.repeat(index % 8) + w(92), kind: (['add', 'remove', 'context'] as const)[index % 3] })) } },
+  { id: 'stress-portrait', template: 'portrait', answer, data: { name: w(32), subtitle: w(48), src: 'portrait-ren', note: w(48) } },
+  { id: 'stress-glance', template: 'glance', answer, data: { title: w(32), value: w(12), detail: w(48), backdrop: 'ginkgo', footer: w(32) } },
+  { id: 'stress-focus', template: 'focus', answer, data: { title: w(32), value: w(12), detail: w(48), progress: 1, backdrop: 'contours' } },
+  { id: 'stress-motion', template: 'motion', answer, data: { title: w(32), detail: w(48), mode: 'orbit', phase: 15, backdrop: 'stars' } },
 ];

@@ -1,6 +1,6 @@
 # Artifact templates
 
-The template registry and twelve renderers live in `src/artifacts/`: the seven extracted ones (list, schedule, image, image grid, thumbnail list, card, calendar) and five added for a display assistant (checklist, choices, stat, directions, code). Rendering receives a 288×288 canvas context, palette, loaded image lookup, and `{scroll, chosen}`. It never calls a model or SDK. The phone surface encodes this canvas into two images and applies them through the device adapter.
+The template registry and sixteen renderers live in `src/artifacts/`: the seven extracted ones (list, schedule, image, image grid, thumbnail list, card, calendar) and nine added for a display assistant (checklist, choices, stat, directions, code, portrait, glance, focus, motion). Rendering receives a 288×288 canvas context, palette, loaded image lookup, and `{scroll, chosen}`. It never calls a model or SDK. The phone surface encodes this canvas into two images and applies them through the device adapter.
 
 `src/core/contracts.ts` holds the public Zod schemas. MCP's `artifact_templates` returns their JSON schemas. Inputs are discriminated by `template`, reject unknown fields, and enforce string/array bounds before rendering. The template registry and contract catalog must remain aligned; a test checks this invariant.
 
@@ -8,9 +8,11 @@ Use `src/core/examples.ts` as a complete example catalog. Open `/gallery.html` t
 
 ## Images
 
-The four supported `src` values are `architecture`, `waveform`, `route`, and `grid`. These are repository-owned SVG diagram fixtures in `src/web/public/assets/`, loaded from the app's own bundle. They are not photos of people. Arbitrary URL/data/file references are rejected; the browser never fetches an agent-provided image URL.
+Generic image `src` values are `architecture`, `waveform`, `route`, `grid`, `moonrise`, and `ginkgo`. The first four are SVG diagram fixtures; the latter two are AI-generated grayscale background art. The `portrait` template separately accepts `portrait-mira` and `portrait-ren`, both fictional AI-generated people, and always prints AI FICTIONAL. All assets live in `src/web/public/assets/` and load from the app's own bundle. Arbitrary URL/data/file references are rejected; the browser never fetches an agent-provided image URL.
 
 To add your own licensed image, put a safe asset in the public assets directory, add its key to `imageKeySchema` and `registerAssets`, and rebuild. Strip metadata, use sensible dimensions, and preserve its license. Remote URL fetching would need a separate privacy/CORS/size/redirect policy; do not bypass the alias boundary.
+
+The [Quiet Surfaces guide](QUIET_SURFACES.md) documents the four new templates, all backdrop and motion variants, display constraints, and animation pacing. Motion data describes a single phase; publishing it over MCP never starts an automatic loop.
 
 ## Interactive template
 

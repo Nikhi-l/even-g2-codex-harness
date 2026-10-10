@@ -17,11 +17,11 @@ export class StateStore {
   private deliveries: Delivery[] = [];
   constructor(private now = Date.now, readonly sessionId = newId()) {}
 
-  private change(type: string, increment = true, inputType?: DisplayInput['type'], choice?: number) {
+  private change(type: string, increment = true, inputType?: DisplayInput['type'], choice?: number, text?: string) {
     if (increment) { this.revision++; this.deliveries = []; }
     const version = choice === undefined ? undefined : this.artifacts.get(this.activeId ?? '')?.version;
     this.journal.push({ sequence: ++this.sequence, at: this.now(), type, artifactId: this.activeId, revision: this.revision,
-      ...(inputType ? { inputType } : {}), ...(choice === undefined ? {} : { choice, artifactVersion: version }) });
+      ...(inputType ? { inputType } : {}), ...(choice === undefined ? {} : { choice, artifactVersion: version }), ...(text === undefined ? {} : { text }) });
     if (this.journal.length > 100) this.journal.shift();
   }
   private expect(revision?: number, sessionId?: string) {
@@ -83,6 +83,25 @@ export class StateStore {
     this.layout = next.layout; this.cursor = next.scroll; this.answerPage = next.answerPage;
     if (choice !== undefined) this.chosen = choice;
     this.change(event, true, input.type, choice); return this.snapshot();
+  }
+  /** Apply a transcribed utterance: record it, then run the display command it names, if any. */
+  voice(text: string, action: { kind: 'input'; type: 'next' | 'previous' | 'select' } | { kind: 'choose'; index: number } | { kind: 'clear' } | { kind: 'message' }, sessionId: string) {
+    this.expire();
+    if (sessionId !== this.sessionId) throw new ConflictError('Server session changed; refresh state');
+    // Only free speech is a message for the agent; recognised commands are journalled separately.
+    this.change(action.kind === 'message' ? 'voice' : 'voice:command', true, undefined, undefined, text.slice(0, 500));
+    const artifact = this.activeId ? this.artifacts.get(this.activeId) : undefined;
+    if (action.kind === 'clear') { this.activeId = null; this.cursor = 0; this.chosen = null; this.change('cleared'); }
+    else if (action.kind === 'choose' && artifact?.template === 'choices' && action.index < artifact.data.options.length) {
+      this.cursor = action.index; this.chosen = action.index; this.layout = 'split'; this.change('choice', true, 'select', action.index);
+    } else if (action.kind === 'input' && artifact) {
+      if (action.type === 'select') { this.layout = this.layout === 'split' ? 'answer' : 'split'; this.answerPage = 0; this.change(`layout:${this.layout}`, true, 'select'); }
+      else {
+        const { next, event } = navigate(artifact, { layout: this.layout, scroll: this.cursor, answerPage: this.answerPage }, action.type);
+        this.layout = next.layout; this.cursor = next.scroll; this.answerPage = next.answerPage; this.change(event, true, action.type);
+      }
+    }
+    return this.snapshot();
   }
   setLayout(raw: unknown, expectedRevision?: number, expectedSessionId?: string) {
     this.expire(); this.expect(expectedRevision, expectedSessionId);

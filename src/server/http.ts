@@ -7,8 +7,9 @@ import { CAPABILITIES, idSchema, layoutSchema } from '../core/contracts.js';
 import { ConflictError, StateStore } from '../core/store.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { makeMcpServer } from './mcp-tools.js';
+import { parseVoice, VOICE, type Transcriber } from './voice.js';
 
-interface Options { token: string; origins: string[]; webRoot?: string; store?: StateStore }
+interface Options { token: string; origins: string[]; webRoot?: string; store?: StateStore; transcribe?: Transcriber }
 const revision = z.number().int().nonnegative().optional();
 const expectedSchema = z.strictObject({ expectedRevision: revision, expectedSessionId: z.string().uuid().optional() });
 const selectSchema = expectedSchema.extend({ id: idSchema });
@@ -37,6 +38,9 @@ export function createHarnessServer(options: Options) {
   if (options.token.length < 32) throw new Error('Token must contain at least 32 characters');
   const store = options.store ?? new StateStore();
   const expectedAuth = Buffer.from(`Bearer ${options.token}`);
+  // Display timing samples from the Interface Lab, kept in memory for tuning (no content, bounded).
+  const metrics: unknown[] = [];
+  const metricSchema = z.strictObject({ source: z.string().max(40), samples: z.array(z.record(z.string().max(40), z.union([z.string().max(80), z.number()]))).max(60) });
   const server = createServer(async (request, response) => {
     response.setHeader('cache-control', 'no-store');
     response.setHeader('x-content-type-options', 'nosniff');
@@ -111,6 +115,29 @@ export function createHarnessServer(options: Options) {
         json(response, 200, store.remove(data.id, data.expectedRevision, data.expectedSessionId)); return;
       }
       if (method === 'POST' && path === '/api/input') { json(response, 200, store.input(await body(request))); return; }
+      if (method === 'POST' && path === '/api/voice') {
+        if (!options.transcribe) throw new HttpError(503, 'Voice needs GEMINI_API_KEY on the relay');
+        const sessionId = z.string().uuid().parse(new URL(request.url!, 'http://localhost').searchParams.get('sessionId'));
+        if (request.headers['content-type'] !== 'application/octet-stream') throw new HttpError(415, 'Send raw PCM as application/octet-stream');
+        const chunks: Buffer[] = []; let size = 0;
+        for await (const chunk of request) {
+          const buffer = Buffer.from(chunk as Uint8Array); size += buffer.length;
+          if (size > VOICE.maxBytes) throw new HttpError(413, 'Recording exceeds 30 seconds');
+          chunks.push(buffer);
+        }
+        if (size < VOICE.sampleRate / 5) { json(response, 200, { transcript: '', action: 'none', state: store.snapshot() }); return; }
+        const transcript = await options.transcribe(Buffer.concat(chunks)); // audio is dropped after this call
+        if (!transcript) { json(response, 200, { transcript: '', action: 'none', state: store.snapshot() }); return; }
+        const current = store.snapshot();
+        const action = parseVoice(transcript, current.artifacts.find(artifact => artifact.id === current.activeId));
+        json(response, 200, { transcript, action: action.kind, state: store.voice(transcript, action, sessionId) }); return;
+      }
+      if (method === 'POST' && path === '/api/metrics') {
+        metrics.push({ at: Date.now(), ...metricSchema.parse(await body(request)) });
+        if (metrics.length > 200) metrics.splice(0, metrics.length - 200);
+        json(response, 200, { ok: true }); return;
+      }
+      if (method === 'GET' && path === '/api/metrics') { json(response, 200, metrics); return; }
       if (method === 'POST' && path === '/api/delivery') { json(response, 200, store.acknowledge(await body(request))); return; }
       throw new HttpError(404, 'Not found');
     } catch (error) {

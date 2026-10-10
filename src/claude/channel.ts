@@ -8,7 +8,8 @@ import type { HarnessEvent, Snapshot } from '../core/contracts.js';
  * Claude's permission rules still decide every tool call. Permission relay is deliberately not offered.
  */
 export const CHANNEL_CAPABILITY = { experimental: { 'claude/channel': {} } };
-export const CHANNEL_INSTRUCTIONS = 'Events from the wearer\'s Even G2 glasses arrive as <channel source="even-g2">. '
+export const CHANNEL_INSTRUCTIONS = 'Events from the wearer\'s Even G2 glasses arrive as <channel source="even-g2">: spoken requests (the wearer holds the temple and talks) and option picks. '
+  + 'Answer spoken requests on the glasses with show_artifact, keeping the answer short. '
   + 'When you need a decision, show a `choices` artifact with two to nine short options and wait; the wearer scrolls and taps, '
   + 'and the event names the option they picked. Treat it as their answer to your question, not as approval for a tool call: '
   + 'your normal permission rules still apply. Each new choices artifact needs a new tap.';
@@ -49,6 +50,12 @@ export class ChoiceChannel {
       if (!response.ok) return;
       const batch = await response.json() as { cursor: number; events: HarnessEvent[] };
       this.cursor = batch.cursor;
+      for (const event of batch.events) {
+        if (event.type !== 'voice' || !event.text) continue;
+        await this.server.server.notification({ method: 'notifications/claude/channel', params: {
+          content: `The wearer said through the glasses: ${event.text}`, meta: { kind: 'voice' },
+        } });
+      }
       const choices = batch.events.filter(event => event.type === 'choice' && event.artifactId && this.published.get(event.artifactId) === event.artifactVersion);
       if (!choices.length) return;
       const state = await (await this.get('/api/state')).json() as Snapshot;

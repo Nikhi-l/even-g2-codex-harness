@@ -68,6 +68,8 @@ export interface DisplayFrame {
 export interface HarnessEvent {
   sequence: number; at: number; type: string; artifactId: string | null; revision: number;
   inputType?: DisplayInput['type']; artifactVersion?: number; choice?: number;
+  /** What the wearer said, for `voice` events. Untrusted text, never permission. */
+  text?: string;
 }
 export interface Snapshot {
   sessionId: string; revision: number; activeId: string | null; artifacts: Artifact[];
@@ -80,6 +82,6 @@ export const CAPABILITIES = Object.freeze({
   answerText: { linesPerScreen: 10, rowsPerPage: 8, splitWidthPx: 260, fullWidthPx: 530, measuredWith: 'Even Hub simulator 0.9.5' },
   choices: 'On a choices artifact, tap records a choice event for the highlighted option; it never runs an action.',
   maxArtifacts: 20, imageContainers: 2, textContainers: 1, hardwareVerified: false,
-  microphone: false, directBluetooth: false, automaticAgentTurns: false, statePersistence: 'memory-only',
+  microphone: 'push-to-talk: hold the temple; transcribed by the relay, never stored', directBluetooth: false, automaticAgentTurns: false, statePersistence: 'memory-only',
   sessionGuard: true, eventsSession: true, nativeDoubleTap: 'system-exit-dialog',
 });

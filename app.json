@@ -6,6 +6,6 @@
   "min_app_version": "2.2.9",
   "min_sdk_version": "0.0.14",
   "entrypoint": "index.html",
-  "permissions": [],
+  "permissions": [{ "name": "g2-microphone", "desc": "Hold the glasses temple to speak a command or a message to your agent. Audio is sent only while you hold." }],
   "supported_languages": ["en"]
 }

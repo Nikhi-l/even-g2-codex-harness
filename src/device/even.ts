@@ -8,8 +8,17 @@ import type { DisplayFrame } from '../core/contracts.js';
 import type { DisplayAdapter, InputType, Receipt } from './adapter.js';
 import { encodeTiles } from './tiles.js';
 
-export const CONTAINER = { containerID: 1, containerName: 'g2-artifact' } as const;
-export type Bridge = Pick<EvenAppBridge, 'createStartUpPageContainer' | 'rebuildPageContainer' | 'textContainerUpgrade' | 'updateImageRawData' | 'onEvenHubEvent' | 'shutDownPageContainer' | 'getLocalStorage' | 'setLocalStorage'>;
+/** Invisible full-screen container that receives gestures, so the firmware's scroll bounce never moves the answer. */
+export const CONTAINER = { containerID: 1, containerName: 'g2-input' } as const;
+export const ANSWER = { containerID: 4, containerName: 'g2-answer' } as const;
+export type Bridge = Pick<EvenAppBridge, 'createStartUpPageContainer' | 'rebuildPageContainer' | 'textContainerUpgrade' | 'updateImageRawData' | 'onEvenHubEvent' | 'shutDownPageContainer' | 'getLocalStorage' | 'setLocalStorage' | 'audioControl'>;
+export interface VoiceHandlers { press(): void; release(): void; audio(pcm: Uint8Array): void }
+function bytes(value: unknown): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (Array.isArray(value)) return Uint8Array.from(value as number[]);
+  if (typeof value === 'string') return Uint8Array.from(atob(value), char => char.charCodeAt(0));
+  return new Uint8Array();
+}
 export function normalizeInput(event: EvenHubEvent): InputType | null {
   // Protobuf may omit zero-valued CLICK_EVENT. Only default within a real envelope.
   const payload = event.textEvent ?? event.sysEvent;
@@ -36,13 +45,21 @@ export class EvenAdapter implements DisplayAdapter {
   private layout = '';
   private previousText = '';
   private previousTileSignature = '';
+  private previousTiles: Uint8Array[] = [];
   private disposed = false;
   private operation: Promise<unknown> = Promise.resolve();
   private exitPending = false;
   private unsubscribe: () => void;
+  private voice: VoiceHandlers | null = null;
   constructor(private bridge: Bridge, onInput: (type: InputType) => void, diagnostic: (message: string) => void = () => {}, private timeoutMs = 8000,
-    private tiles = encodeTiles, private failure: (error: Error) => void = () => {}) {
+    private tiles = encodeTiles, private failure: (error: Error) => void = () => {},
+    /** Recovering inside a WebView whose page already exists: rebuild instead of creating it. */
+    private resume = false) {
     this.unsubscribe = bridge.onEvenHubEvent(event => {
+      if (event.audioEvent) { if (!this.disposed) this.voice?.audio(bytes(event.audioEvent.audioPcm)); return; }
+      const press = (event.sysEvent ?? event.textEvent)?.eventType;
+      if (press === OsEventTypeList.LONG_PRESS_EVENT) { if (!this.disposed) this.voice?.press(); return; }
+      if (press === OsEventTypeList.LONG_PRESS_RELEASE_EVENT) { if (!this.disposed) this.voice?.release(); return; }
       // Log event shape/type only: audio and arbitrary raw payloads never leave this boundary.
       const envelope = event.textEvent ? 'text' : event.sysEvent ? 'system' : 'other';
       diagnostic(`${envelope} event ${event.textEvent?.eventType ?? event.sysEvent?.eventType ?? 'omitted'}`);
@@ -83,6 +100,14 @@ export class EvenAdapter implements DisplayAdapter {
       }
     });
   }
+  /** Hold-to-talk: long press and release on the glasses, plus microphone audio while open. */
+  onVoice(handlers: VoiceHandlers | null) { this.voice = handlers; }
+  microphone(open: boolean) {
+    return this.setting(async () => {
+      const accepted = await timeout(this.bridge.audioControl(open), this.timeoutMs, 'Microphone did not respond. Reopen the Even Hub app.');
+      if (accepted !== true) throw new Error(open ? 'Glasses microphone could not start' : 'Glasses microphone could not stop');
+    });
+  }
   readSetting(key: string) {
     return this.setting(() => timeout(this.bridge.getLocalStorage(key), this.timeoutMs, 'Could not restore phone settings. Reopen the Even Hub app.'));
   }
@@ -104,16 +129,22 @@ export class EvenAdapter implements DisplayAdapter {
       const split = frame.layout === 'split' && frame.artifact !== null;
       const shape = split ? 'split' : 'answer';
       const structure = {
-        containerTotalNum: split ? 3 : 1,
-        textObject: [new TextContainerProperty({ ...CONTAINER, xPosition: 0, yPosition: 0,
-          width: split ? 288 : 576, height: 288, borderWidth: 0, paddingLength: 6, isEventCapture: 1, content })],
+        containerTotalNum: split ? 4 : 2,
+        textObject: [
+          new TextContainerProperty({ ...CONTAINER, xPosition: 0, yPosition: 0, width: 576, height: 288, borderWidth: 0, paddingLength: 0, isEventCapture: 1, content: ' ' }),
+          new TextContainerProperty({ ...ANSWER, xPosition: 0, yPosition: 0,
+            width: split ? 288 : 576, height: 288, borderWidth: 0, paddingLength: 6, isEventCapture: 0, content }),
+        ],
         imageObject: split ? [0, 1].map(index => new ImageContainerProperty({
           containerID: 2 + index, containerName: `artifact-${index}`, xPosition: 288,
           yPosition: index * 144, width: 288, height: 144,
         })) : [],
       };
       if (!this.ready || this.layout !== shape) {
-        if (!this.ready) {
+        if (!this.ready && this.resume) {
+          const accepted = await timeout(this.bridge.rebuildPageContainer(new RebuildPageContainer(structure)), this.timeoutMs, 'Recovery timed out. Reopen the Even Hub app.');
+          if (accepted !== true) throw new Error('Recovery rebuild rejected. Reopen the Even Hub app.');
+        } else if (!this.ready) {
           const result = await timeout(this.bridge.createStartUpPageContainer(new CreateStartUpPageContainer(structure)), this.timeoutMs, 'Page creation timed out. Reopen the Even Hub app.');
           if (result !== StartUpPageCreateResult.success) throw new Error(`Page creation rejected (${result}). Reopen the Even Hub app.`);
         } else {
@@ -121,14 +152,14 @@ export class EvenAdapter implements DisplayAdapter {
           if (accepted !== true) throw new Error('Layout update rejected. Reopen the Even Hub app.');
         }
         this.ready = true;
-        this.layout = shape; this.previousText = content; this.previousTileSignature = '';
+        this.layout = shape; this.previousText = content; this.previousTileSignature = ''; this.previousTiles = [];
       } else if (content !== this.previousText) {
         if (content.length >= this.previousText.length) {
           // Rewrite the whole text from offset 0. It covers the old buffer whether the firmware overwrites
           // in place or replaces the content, so nothing stale survives. Offset appends mis-render
           // (Display_Mcp disabled them after device testing; the simulator shows only the tail).
           const accepted = await timeout(this.bridge.textContainerUpgrade(new TextContainerUpgrade({
-            ...CONTAINER, contentOffset: 0, contentLength: content.length, content,
+            ...ANSWER, contentOffset: 0, contentLength: content.length, content,
           })), this.timeoutMs, 'Text update timed out. Reopen the Even Hub app before retrying.');
           if (accepted !== true) throw new Error('Text update rejected. Reopen the Even Hub app.');
         } else {
@@ -136,7 +167,7 @@ export class EvenAdapter implements DisplayAdapter {
           // firmware scroll the text container and steal the wearer's scroll gesture from the artifact.
           const accepted = await timeout(this.bridge.rebuildPageContainer(new RebuildPageContainer(structure)), this.timeoutMs, 'Layout update timed out. Reopen the Even Hub app.');
           if (accepted !== true) throw new Error('Layout update rejected. Reopen the Even Hub app.');
-          this.previousTileSignature = '';
+          this.previousTileSignature = ''; this.previousTiles = [];
         }
         this.previousText = content;
       }
@@ -145,6 +176,9 @@ export class EvenAdapter implements DisplayAdapter {
         const tiles = await timeout(this.tiles(frame), this.timeoutMs, 'Artifact encoding timed out');
         if (tiles.length !== 2) throw new Error('Expected two artifact tiles');
         for (let index = 0; index < 2; index++) {
+          // Bluetooth image transfer dominates latency: skip a half whose pixels did not change.
+          const previous = this.previousTiles[index];
+          if (previous && previous.length === tiles[index]!.length && previous.every((byte, at) => byte === tiles[index]![at])) continue;
           const result = await timeout(this.bridge.updateImageRawData(new ImageRawDataUpdate({
             containerID: index + 2, containerName: `artifact-${index}`, imageData: tiles[index]!,
           })), this.timeoutMs, 'Image update timed out. Reopen the Even Hub app.');
@@ -152,7 +186,7 @@ export class EvenAdapter implements DisplayAdapter {
             throw new Error(`Image tile ${index + 1} rejected. Reopen the Even Hub app.`);
           }
         }
-        this.previousTileSignature = signature;
+        this.previousTileSignature = signature; this.previousTiles = tiles;
       }
       return { sessionId: frame.sessionId, status: 'bridge-accepted', revision: frame.revision };
     } catch (error) {
@@ -162,7 +196,7 @@ export class EvenAdapter implements DisplayAdapter {
   }
   dispose() { if (!this.disposed) this.unsubscribe(); this.disposed = true; }
 }
-export async function connectEven(onInput: (type: InputType) => void, diagnostic: (message: string) => void, failure: (error: Error) => void = () => {}) {
+export async function connectEven(onInput: (type: InputType) => void, diagnostic: (message: string) => void, failure: (error: Error) => void = () => {}, resume = false) {
   const bridge = await timeout(waitForEvenAppBridge(), 5000, 'Even Hub bridge not found. Open this app inside Even Hub or use Preview.');
-  return new EvenAdapter(bridge, onInput, diagnostic, 8000, encodeTiles, failure);
+  return new EvenAdapter(bridge, onInput, diagnostic, 8000, encodeTiles, failure, resume);
 }

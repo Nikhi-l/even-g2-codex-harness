@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { createHarnessServer } from './http.js';
 import { projectRoot, serverConnection } from './config.js';
+import { geminiTranscriber } from './voice.js';
 
 const host = process.env.G2_HARNESS_HOST ?? '127.0.0.1';
 const port = Number(process.env.G2_HARNESS_PORT ?? 8787);
@@ -22,11 +23,14 @@ for (const allowed of (process.env.G2_HARNESS_ALLOWED_ORIGINS ?? '').split(',').
   if (origin.origin !== allowed.trim() || !['http:', 'https:'].includes(origin.protocol)) throw new Error('Additional origins must be exact HTTP(S) origins');
   origins.push(origin.origin);
 }
-const { server } = createHarnessServer({ token: connection.token, origins, webRoot: join(projectRoot, 'dist/web') });
+const apiKey = process.env.GEMINI_API_KEY;
+const transcribe = apiKey ? geminiTranscriber(apiKey, process.env.G2_VOICE_MODEL) : undefined;
+const { server } = createHarnessServer({ token: connection.token, origins, webRoot: join(projectRoot, 'dist/web'), ...(transcribe ? { transcribe } : {}) });
 server.listen(port, host, () => {
   console.error(`Even G2 harness: ${connection.url}/`);
   if (loopback) console.error(`Open this private session link (do not share): ${connection.url}/#token=${connection.token}`);
   console.error('MCP: use the absolute path to dist/server/mcp.js. Artifact state is memory-only.');
+  console.error(transcribe ? 'Voice: hold the temple to talk (Gemini transcription, audio not stored).' : 'Voice: off (set GEMINI_API_KEY to enable).');
   if (!loopback) console.error('LAN mode enabled: use only on a trusted network. HTTPS is required for production.');
 });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => { server.close(); server.closeAllConnections(); });

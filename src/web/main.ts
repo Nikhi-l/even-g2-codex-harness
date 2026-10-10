@@ -37,6 +37,13 @@ let appMode = new URL(location.href).searchParams.get('evenhub') === '1';
 let evenFailed = false;
 let evenReceipt: Receipt | null = null;
 let inputBusy = false;
+const pendingInputs: DisplayInput['type'][] = [];
+let recording: Uint8Array[] | null = null;
+let recordingBytes = 0;
+let recordingTimer: ReturnType<typeof setTimeout> | undefined;
+const voiceEnabled = new URL(location.href).searchParams.get('voice') === '1';
+let recoveries = 0;
+let glassesAccepted = false;
 const clientId = `web-${newId()}`;
 
 function message(text: string) { element('message').textContent = text; }
@@ -76,7 +83,7 @@ function syncEditor(artifact: ArtifactInput) {
 }
 function deviceFrame(frame: DisplayFrame): DisplayFrame {
   if (connection && frame.revision === 0 && !frame.artifact && !frame.text) {
-    return { ...frame, text: 'G2 Artifact Harness\n\nRelay connected.\nAsk Codex to show an artifact.\n\nDouble tap: system exit.' };
+    return { ...frame, text: 'G2 ARTIFACT HARNESS\n\nRelay connected.\nAsk Claude or Codex to show\nan artifact.\n\nDouble tap: system exit.' };
   }
   return frame;
 }
@@ -109,14 +116,15 @@ async function publish(artifact: ArtifactInput) {
   message(''); log(`Showing ${artifact.template} · ${artifact.id}`);
 }
 async function input(type: DisplayInput['type'], expected = { revision: snapshot.revision, sessionId: snapshot.sessionId }) {
-  if (inputBusy) return;
+  // Quick scrolls queue behind the one in flight instead of being dropped.
+  if (inputBusy) { if (pendingInputs.length < 6) pendingInputs.push(type); return; }
   inputBusy = true;
   try {
     const data = { type, eventId: newId(), sessionId: expected.sessionId, revision: expected.revision };
     if (connection) await mutate('/api/input', data); else apply(local.input(data));
     message(''); log(`Input · ${type}`);
   } catch (error) { message(error instanceof Error ? error.message : 'Input failed'); }
-  finally { inputBusy = false; }
+  finally { inputBusy = false; const next = pendingInputs.shift(); if (next) void input(next); }
 }
 function fail(error: unknown) { message(error instanceof Error ? error.message : 'Operation failed'); }
 async function poll() {
@@ -136,11 +144,12 @@ async function poll() {
     if (currentGeneration === generation) pollTimer = setTimeout(() => { void poll(); }, backoff);
   }
 }
-async function connect(origin: string, token: string, restoring = false) {
+async function connect(origin: string, token: string, restoring = false, fromPrivateLink = false) {
   if (packagedOrigin && origin !== packagedOrigin) throw new Error('Use the HTTPS relay origin configured for this package');
   const url = new URL(origin);
   if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol)) throw new Error('Enter a full HTTP(S) origin without a path');
-  if (url.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(url.hostname) && !confirm('Use this HTTP relay only on a trusted development LAN. Continue?')) return;
+  // A private session link (QR or npm start) is already the wearer's explicit choice; WebViews may not show confirm().
+  if (url.protocol === 'http:' && !fromPrivateLink && !['localhost', '127.0.0.1'].includes(url.hostname) && !confirm('Use this HTTP relay only on a trusted development LAN. Continue?')) return;
   let currentGeneration = ++generation;
   const currentSettingsGeneration = ++settingsGeneration;
   const superseded = () => generation !== currentGeneration || (restoring && settingsGeneration !== currentSettingsGeneration);
@@ -204,16 +213,71 @@ element('forget-relay').addEventListener('click', () => {
       element('saved-status').textContent = 'Saved connection removed. Current session remains connected.';
   }).catch(error => { if (settingsGeneration === currentSettingsGeneration) fail(error); });
 });
-function startEven() {
+/** Replace the answer header on the glasses only, for listening feedback. The relay state is untouched. */
+function glassesHeader(label: string) {
+  if (!evenQueue) return;
+  const frame = deviceFrame(snapshot.frame);
+  const lines = frame.text ? frame.text.split('\n') : [''];
+  lines[0] = label;
+  evenQueue.submit({ ...frame, text: lines.join('\n') });
+}
+function voiceHandlers(adapter: EvenAdapter) {
+  const stop = async () => {
+    if (!recording) return;
+    const chunks = recording; recording = null; clearTimeout(recordingTimer);
+    void adapter.microphone(false).catch(() => {});
+    if (!connection) return;
+    glassesHeader('... TRANSCRIBING');
+    const audio = new Uint8Array(recordingBytes); let offset = 0;
+    for (const chunk of chunks) { audio.set(chunk, offset); offset += chunk.length; }
+    try {
+      const response = await fetch(`${connection.origin}/api/voice?sessionId=${encodeURIComponent(snapshot.sessionId)}`, {
+        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30000), body: audio,
+        headers: { Authorization: `Bearer ${connection.token}`, 'content-type': 'application/octet-stream' },
+      });
+      const result = await response.json() as { transcript?: string; action?: string; state?: Snapshot; error?: string };
+      if (!response.ok || !result.state) throw new Error(result.error ?? `Voice failed (${response.status})`);
+      log(result.transcript ? `Heard · ${result.transcript} (${result.action})` : 'Heard nothing');
+      lastHealthy = Date.now(); apply(result.state);
+      if (result.action === 'message' && result.transcript) glassesHeader(`SENT: ${result.transcript}`.slice(0, 26));
+      else if (!result.transcript) evenQueue?.submit(deviceFrame(snapshot.frame));
+    } catch (error) { message(error instanceof Error ? error.message : 'Voice failed'); evenQueue?.submit(deviceFrame(snapshot.frame)); }
+  };
+  adapter.onVoice({
+    press() {
+      // Push-to-talk is opt-in (?voice=1): without it, holding the temple never opens the microphone.
+      if (!voiceEnabled || recording || !connection) return;
+      recording = []; recordingBytes = 0; glassesHeader('\u25cf LISTENING');
+      adapter.microphone(true).catch(error => { recording = null; fail(error); evenQueue?.submit(deviceFrame(snapshot.frame)); });
+      recordingTimer = setTimeout(() => { void stop(); }, 30000);
+    },
+    release() { void stop(); },
+    audio(pcm) { if (recording && recordingBytes + pcm.length <= 960000) { recording.push(pcm); recordingBytes += pcm.length; } },
+  });
+}
+/** After a failed SDK write (often a locked phone), rebuild the surface once the app is visible again. */
+function scheduleRecovery() {
+  if (recoveries >= 3) { element('adapter-status').textContent = 'Failed · reopen Even Hub'; return; }
+  const attempt = () => {
+    if (document.visibilityState !== 'visible') { document.addEventListener('visibilitychange', attempt, { once: true }); return; }
+    setTimeout(() => { recoveries++; evenFailed = false; log('Reconnecting the glasses'); startEven(true); }, 3000);
+  };
+  attempt();
+}
+function startEven(resume = false) {
   if (evenFailed) { message('Reopen the Even Hub app to recover the SDK surface.'); return; }
   if (evenQueue) { message('Even Hub adapter is already connected.'); return; }
   const button = element<HTMLButtonElement>('even-button'); button.disabled = true;
   const failed = (error: Error) => {
-    evenFailed = true; evenQueue?.dispose(); element('adapter-status').textContent = 'Failed · reopen Even Hub'; message(error.message); log('Even adapter failed');
+    evenFailed = true; evenQueue?.dispose(); evenQueue = null; evenAdapter = null; pendingInputs.length = 0;
+    message(error.message); log('Even adapter failed');
+    // Only a surface that worked before is worth rebuilding; a missing bridge needs the Even app.
+    if (glassesAccepted) { element('adapter-status').textContent = 'Failed · reconnecting'; scheduleRecovery(); }
+    else element('adapter-status').textContent = 'Failed · reopen Even Hub';
   };
-  void connectEven(type => { if (evenReceipt) void input(type, evenReceipt); }, log, failed).then(async adapter => {
-    evenAdapter = adapter;
-    evenQueue = new RenderQueue(adapter, receipt => { evenReceipt = receipt; void acknowledge(receipt, 'even'); element('adapter-status').textContent = 'Even Hub · accepted'; }, (error, revision) => {
+  void connectEven(type => { if (evenReceipt) void input(type, evenReceipt); }, log, failed, resume).then(async adapter => {
+    evenAdapter = adapter; voiceHandlers(adapter);
+    evenQueue = new RenderQueue(adapter, receipt => { evenReceipt = receipt; recoveries = 0; glassesAccepted = true; void acknowledge(receipt, 'even'); element('adapter-status').textContent = 'Even Hub · accepted'; }, (error, revision) => {
       failed(error);
       if (connection) void api('/api/delivery', 'POST', { clientId: `even-${clientId}`, mode: 'even', status: 'failed', revision, sessionId: snapshot.sessionId, detail: 'SDK operation failed; reopen the Even Hub app' }).catch(() => {});
     });
@@ -235,7 +299,7 @@ function startEven() {
     }
   }).catch(fail).finally(() => { button.disabled = false; });
 }
-element('even-button').addEventListener('click', startEven);
+element('even-button').addEventListener('click', () => startEven());
 // Network loss and TTL are evaluated locally as well, so stale private content is blanked.
 setInterval(() => {
   const expired = snapshot.frame.artifact && snapshot.frame.artifact.expiresAt <= Date.now();
@@ -258,7 +322,7 @@ try {
   appMode ||= config.autoConnectEven === true;
 } catch { /* demo config is optional */ }
 if (appMode) {
-  selected = { ...selected, answer: 'G2 Artifact Harness\n\nBundled demo. Connect your relay on the phone for Codex artifacts.\n\nTap: toggle pane.\nDouble tap: system exit.' };
+  selected = { ...selected, answer: 'Bundled demo. Connect your relay on the phone for agent artifacts.\n\nTap: toggle pane.\nDouble tap: system exit.' };
   snapshot = local.upsert(selected);
 }
 syncEditor(selected); apply(snapshot); log('Local demo · no glasses or API key required');
@@ -266,6 +330,6 @@ const fragment = new URLSearchParams(location.hash.slice(1));
 const token = fragment.get('token');
 if (token) {
   history.replaceState(null, '', location.pathname + location.search);
-  await connect(relayUrl.value, token).catch(fail);
+  await connect(relayUrl.value, token, false, true).catch(fail);
 } else void poll();
 if (appMode) startEven();

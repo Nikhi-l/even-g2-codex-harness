@@ -7,7 +7,7 @@ import { examples } from '../src/core/examples.js';
 import { COMPENSATED, DISPLAYED_LEVELS } from '../src/device/tiles.js';
 function setup() {
  const unsubscribe = vi.fn();
- const bridge: Bridge = { createStartUpPageContainer: vi.fn(async () => StartUpPageCreateResult.success), rebuildPageContainer: vi.fn(async () => true), textContainerUpgrade: vi.fn(async () => true), updateImageRawData: vi.fn(async () => ImageRawDataUpdateResult.success), onEvenHubEvent: vi.fn(() => unsubscribe), shutDownPageContainer: vi.fn(async () => true), getLocalStorage: vi.fn(async () => ''), setLocalStorage: vi.fn(async () => true) };
+ const bridge: Bridge = { createStartUpPageContainer: vi.fn(async () => StartUpPageCreateResult.success), rebuildPageContainer: vi.fn(async () => true), textContainerUpgrade: vi.fn(async () => true), updateImageRawData: vi.fn(async () => ImageRawDataUpdateResult.success), onEvenHubEvent: vi.fn(() => unsubscribe), shutDownPageContainer: vi.fn(async () => true), getLocalStorage: vi.fn(async () => ''), setLocalStorage: vi.fn(async () => true), audioControl: vi.fn(async () => true) };
  const store = new StateStore(); const frame = store.upsert(examples[0]).frame;
  const tiles = vi.fn(async () => [new Uint8Array([1]), new Uint8Array([2])]);
  return { bridge, store, frame, tiles, unsubscribe, adapter: new EvenAdapter(bridge, vi.fn(), vi.fn(), 100, tiles) };
@@ -69,7 +69,7 @@ describe('Even adapter', () => {
   const { adapter, bridge, frame, tiles } = setup();
   expect((await adapter.render(frame)).status).toBe('bridge-accepted');
   const create = vi.mocked(bridge.createStartUpPageContainer).mock.calls[0]![0];
-  expect(create.containerTotalNum).toBe(3); expect(create.textObject?.filter(value => value.isEventCapture === 1)).toHaveLength(1);
+  expect(create.containerTotalNum).toBe(4); expect(create.textObject?.find(value => value.isEventCapture === 1)?.content).toBe(' '); expect(create.textObject?.filter(value => value.isEventCapture === 1)).toHaveLength(1);
   expect(create.imageObject?.map(value => [value.width, value.height])).toEqual([[288,144],[288,144]]);
   await adapter.render(frame); expect(tiles).toHaveBeenCalledTimes(1); expect(bridge.updateImageRawData).toHaveBeenCalledTimes(2);
   expect(bridge.createStartUpPageContainer).toHaveBeenCalledTimes(1); expect(bridge.textContainerUpgrade).not.toHaveBeenCalled();
@@ -84,7 +84,7 @@ describe('Even adapter', () => {
   // Padding a shorter text with spaces would wrap into hidden lines and make the firmware scroll.
   await adapter.render({ ...frame, text: 'Short', revision: 3 });
   expect(bridge.textContainerUpgrade).toHaveBeenCalledOnce();
-  expect(vi.mocked(bridge.rebuildPageContainer).mock.calls[0]![0].textObject?.[0]?.content).toBe('Short');
+  expect(vi.mocked(bridge.rebuildPageContainer).mock.calls[0]![0].textObject?.find(value => value.containerName === 'g2-answer')?.content).toBe('Short');
   expect(bridge.updateImageRawData).toHaveBeenCalledTimes(4);
   await adapter.render(store.setLayout('answer').frame); expect(bridge.rebuildPageContainer).toHaveBeenCalledTimes(2);
   await adapter.render(store.setLayout('split').frame); expect(bridge.updateImageRawData).toHaveBeenCalledTimes(6);
@@ -94,8 +94,11 @@ describe('Even adapter', () => {
   const store = new StateStore(); const state = store.upsert(examples.find(example => example.template === 'choices')!);
   await adapter.render(state.frame);
   const chosen = store.input({ type: 'select', eventId: 'choice-1', sessionId: state.sessionId, revision: state.revision }).frame;
+  // Only the top half changes: the unchanged bottom tile is not sent again over Bluetooth.
+  tiles.mockResolvedValueOnce([new Uint8Array([9]), new Uint8Array([2])]);
   expect(chosen.chosen).toBe(0); await adapter.render(chosen);
-  expect(tiles).toHaveBeenCalledTimes(2); expect(bridge.updateImageRawData).toHaveBeenCalledTimes(4);
+  expect(tiles).toHaveBeenCalledTimes(2); expect(bridge.updateImageRawData).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(bridge.updateImageRawData).mock.calls[2]![0].containerID).toBe(2);
  });
  it('rejects invalid startup rather than treating it as success', async () => {
   const { adapter, bridge, frame, unsubscribe } = setup();

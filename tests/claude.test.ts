@@ -106,3 +106,42 @@ describe('Claude Code MCP connection', () => {
   expect(speakerFor('codex-mcp-client')).toBe('Codex'); expect(speakerFor('some-client')).toBeUndefined();
  });
 });
+
+describe('push-to-talk voice', () => {
+ it('parses short commands and option picks, and treats everything else as a message', async () => {
+  const { parseVoice, pcmToWav } = await import('../src/server/voice.js');
+  const choices = { ...artifactSchema.parse(examples.find(example => example.template === 'choices')!), version: 1, expiresAt: 0 };
+  expect(parseVoice('Next.', undefined)).toEqual({ kind: 'input', type: 'next' });
+  expect(parseVoice('go back', undefined)).toEqual({ kind: 'input', type: 'previous' });
+  expect(parseVoice('clear the screen', undefined)).toEqual({ kind: 'message' });
+  expect(parseVoice('clear screen', undefined)).toEqual({ kind: 'clear' });
+  expect(parseVoice('option two', choices)).toEqual({ kind: 'choose', index: 1 });
+  expect(parseVoice('pick show me the diff', choices)).toEqual({ kind: 'choose', index: 2 });
+  expect(parseVoice('what is on my calendar tomorrow afternoon', choices)).toEqual({ kind: 'message' });
+  expect(pcmToWav(Buffer.alloc(320)).subarray(0, 4).toString()).toBe('RIFF');
+ });
+ it('transcribes posted audio, runs commands, journals messages and forwards them through the channel', async () => {
+  const origins: string[] = []; const heard: string[] = ['option two', 'remind me to call the vendor'];
+  const { server, store } = createHarnessServer({ token, origins, transcribe: async pcm => { expect(pcm.length).toBe(16000); return heard.shift()!; } });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); if (!address || typeof address === 'string') throw new Error('No address');
+  const url = `http://127.0.0.1:${address.port}`; origins.push(url);
+  cleanups.push(() => new Promise(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
+  const mcp = makeMcpServer({ url, token }, { channel: true });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); await mcp.connect(serverTransport);
+  const client = new Client({ name: 'claude-code', version: '2.1' }); await client.connect(clientTransport);
+  cleanups.push(async () => { await client.close(); await mcp.close(); });
+  const received: string[] = [];
+  client.setNotificationHandler(z.object({ method: z.literal('notifications/claude/channel'), params: z.object({ content: z.string(), meta: z.record(z.string(), z.string()) }) }), notification => { received.push(notification.params.content); });
+  await mcp.channel!.tick();
+  await client.callTool({ name: 'show_artifact', arguments: { artifact: examples.find(example => example.template === 'choices') } });
+  const speak = async () => (await fetch(`${url}/api/voice?sessionId=${store.sessionId}`, { method: 'POST', body: new Uint8Array(16000), headers: { authorization: `Bearer ${token}`, 'content-type': 'application/octet-stream' } })).json() as Promise<{ action: string; state: Snapshot }>;
+  const pick = await speak(); expect(pick.action).toBe('choose'); expect(pick.state.frame.chosen).toBe(1);
+  const note = await speak(); expect(note.action).toBe('message');
+  expect(store.events(0).events.filter(event => event.type.startsWith('voice')).map(event => [event.type, event.text])).toEqual([['voice:command', 'option two'], ['voice', 'remind me to call the vendor']]);
+  await mcp.channel!.tick();
+  expect(received).toEqual(['The wearer said through the glasses: remind me to call the vendor',
+   'The wearer chose option 2 of 4 for "What should I do next?": Open a pull request']);
+  expect((await fetch(`${url}/api/voice?sessionId=${store.sessionId}`, { method: 'POST', body: '{}', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' } })).status).toBe(415);
+ });
+});

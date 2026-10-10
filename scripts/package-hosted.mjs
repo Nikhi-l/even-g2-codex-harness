@@ -14,7 +14,7 @@ function run(command, commandArgs) {
 run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build']);
 const manifest = JSON.parse(await readFile('app.json', 'utf8'));
 manifest.package_id = packageId;
-manifest.permissions = [{ name: 'network', desc: 'Read and update artifacts on your private relay.', whitelist: [origin] }];
+manifest.permissions = [{ name: 'network', desc: 'Read and update artifacts on your private relay.', whitelist: [origin] }, { name: 'g2-microphone', desc: 'Hold the glasses temple to speak a command or a message to your agent. Audio is sent only while you hold.' }];
 await mkdir('.local', { recursive: true });
 await writeFile('.local/app.hosted.json', JSON.stringify(manifest, null, 2));
 await writeFile('dist/web/harness-config.json', JSON.stringify({ relayOrigin: origin, autoConnectEven: true }));

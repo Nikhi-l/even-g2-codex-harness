@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="color-scheme" content="light"/><title>G2 Interface Lab</title></head><body>
+<header class="topbar"><a class="brand" href="./"><span class="mark">G2</span> Interface lab</a><nav><a href="./">Harness</a><a href="./gallery.html">Gallery</a></nav></header>
+<main>
+<section class="intro"><div><h1>Interface lab</h1><p>A self-running tour of what the G2's green display can do: streaming text, a side window, motion, people, head tracking and every template. Scroll on the temple for the next screen, hold to pause, double tap to exit.</p></div><span class="mode" id="lab-status">Waiting for Even Hub</span></section>
+<div class="lab-controls"><button id="lab-start" class="primary" type="button">Start on glasses</button><button id="lab-pause" type="button">Pause</button><button id="lab-prev" type="button">Previous</button><button id="lab-next" type="button">Next</button></div>
+<section class="activity"><div class="section-heading"><h2>Screens</h2><span id="lab-scene">Not started</span></div><div id="lab-scenes" class="lab-scenes"></div></section>
+<section class="activity"><div class="section-heading"><h2>Glasses log</h2><span id="lab-stats">No frames yet</span></div><div id="lab-log" role="log" aria-live="polite"></div></section>
+</main><footer>Even G2 Interface Lab <span>Runs on the phone · no relay or account needed</span></footer><script type="module" src="./lab.ts"></script></body></html>

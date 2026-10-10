@@ -10,9 +10,9 @@ import { allTemplates } from '../src/artifacts/index.js';
 describe('artifact registry and validation', () => {
  it('keeps the registry and schemas aligned and validates every example and stress fixture', () => {
   expect(allTemplates().map(value => value.id).sort()).toEqual(Object.keys(templateSchemas).sort());
-  expect(Object.keys(templateSchemas)).toHaveLength(12);
+  expect(Object.keys(templateSchemas)).toHaveLength(16);
   for (const example of [...examples, ...stressArtifacts]) expect(artifactSchema.safeParse(example).success).toBe(true);
-  expect(new Set(examples.map(example => example.template)).size).toBe(12);
+  expect(new Set(examples.map(example => example.template)).size).toBe(16);
  });
  it('rejects arbitrary URLs, unknown properties, unbounded data and invalid calendar dates', () => {
   expect(artifactSchema.safeParse({ id: 'img', template: 'image', data: { src: 'https://example.com/private' } }).success).toBe(false);

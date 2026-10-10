@@ -68,6 +68,14 @@ export function renderArtifact(
     image: cachedImage
   };
   template.render(rc, data);
+  // G2 is green-only. Preserve the max-channel brightness used by encodeTiles,
+  // quantize to 16 intended levels, and never suggest that photos can be white/RGB.
+  const pixels = context.getImageData(0, 0, ARTIFACT_W, ARTIFACT_H);
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const green = Math.round(Math.max(pixels.data[i]!, pixels.data[i + 1]!, pixels.data[i + 2]!) / 17) * 17;
+    pixels.data[i] = 0; pixels.data[i + 1] = green; pixels.data[i + 2] = 0;
+  }
+  context.putImageData(pixels, 0, 0);
 }
 
 /**

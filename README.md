@@ -11,7 +11,7 @@ A standalone, open-source artifact display layer for **Even Realities G2**. Give
 
 ## What is included
 
-- **Twelve artifact templates**: the original list, schedule, image, image grid, thumbnail list, card and calendar, plus checklist, choices, stat, directions and code.
+- **Sixteen artifact templates**: the original list, schedule, image, image grid, thumbnail list, card and calendar, plus checklist, choices, stat, directions, code, portrait, glance, focus and motion.
 - A 576 × 288 split surface: native answer text on the left, a 288 × 288 canvas artifact on the right, encoded as two 288 × 144 image tiles.
 - **Screen rules measured in the official Even Hub simulator:** answer text wraps by the firmware font's pixel widths and never exceeds the ten visible lines, so the firmware never scrolls the text and steals the wearer's scroll; tiles are tone-compensated so dark fills stay dark on the glasses. See [DISPLAY.md](docs/DISPLAY.md).
 - **Claude Code support:** the same MCP tools, an automatic session HUD from Claude Code hooks, and an opt-in channel that turns a tap on a `choices` artifact into a message in the live session. See [Claude on the glasses](docs/CLAUDE.md).
@@ -43,6 +43,12 @@ npm run demo
 ```
 
 Choose a template, edit its JSON and answer, then **Show artifact**. Scroll moves the artifact window. Tap toggles the artifact pane. In the desktop demo, the simulated double tap closes the pane; on a connected G2, double tap opens the system exit dialog. In full-width answer mode, scroll pages the answer. **Clear display** blanks both panes; unexpired artifacts can be selected again through MCP.
+
+## Quiet Surfaces: people, backgrounds and motion
+
+Open `/surfaces.html` to explore ten green-only designs, including two clearly labelled fictional AI portraits, moon and ginkgo backgrounds, contour and star details, and four restrained animation modes. Playback is opt-in, completion-paced and reduced-motion aware. The same four new templates are available in MCP and the main editor. See [the collection and display constraints](docs/QUIET_SURFACES.md) and [asset provenance](docs/QUIET_SURFACES_ASSETS.md).
+
+![AI-generated concept directions in monochrome green, not device captures](docs/assets/quiet-surfaces-concepts.png)
 
 ## Connect Codex or Claude
 
@@ -80,7 +86,7 @@ For self-hosted use, connect your MCP client to `https://YOUR_DOMAIN/mcp` with t
 
 ![All twelve artifact templates rendered with safe example data](docs/assets/template-gallery.png)
 
-*Genuine renders from the template registry. The four image assets are bundled diagram fixtures, not personal photos or remote downloads.*
+*Earlier twelve-template gallery. The additional Quiet Surfaces collection is linked above; all image assets are bundled locally.*
 
 ![The same templates on the simulated glasses](docs/assets/simulator-glasses.png)
 
@@ -100,6 +106,10 @@ For self-hosted use, connect your MCP client to `https://YOUR_DOMAIN/mcp` with t
 | `stat` | One to three numbers with unit, delta and trend | Large value, sparkline |
 | `directions` | Destination, ETA and turn-by-turn steps | Scroll advances the current step |
 | `code` | Lines of code or a diff hunk | Monospace with `+`/`-` gutter, scrollable 13-line window |
+| `portrait` | Fictional portrait alias, name, subtitle, note | Permanent AI FICTIONAL label |
+| `glance` | Headline, value, detail, backdrop | Quiet static scene |
+| `focus` | Value, progress, backdrop | Caller-supplied focus dial |
+| `motion` | Mode and bounded phase | Deterministic animation frame; opt-in studio player |
 
 [Phone screenshot](docs/assets/phone-preview.jpg) · [Template authoring](docs/TEMPLATES.md) · [Source extraction map](docs/PROVENANCE.md)
 

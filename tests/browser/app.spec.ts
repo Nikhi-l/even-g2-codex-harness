@@ -37,7 +37,7 @@ test('QR app mode starts through the real SDK and requests its system exit dialo
  await nativeMock(page);
  await page.goto('/?evenhub=1&template=image_grid');
  await expect(page.locator('#adapter-status')).toHaveText('Even Hub · accepted');
- await expect(page.locator('#answer')).toHaveValue(/G2 Artifact Harness/);
+ await expect(page.locator('#answer')).toHaveValue(/Bundled demo\. Connect your relay/);
  await page.getByRole('button', {name:'Double tap · system exit',exact:true}).click();
  await expect.poll(() => page.evaluate(() => (window as unknown as {nativeCalls: {method:string;data:unknown}[]}).nativeCalls.filter(call => call.method === 'shutDownPageContainer'))).toEqual([{method:'shutDownPageContainer',data:{exitMode:1}}]);
 });

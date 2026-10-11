@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="color-scheme" content="light"/><title>Sideband · Social for G2</title></head>
+<body>
+<a class="skip" href="#main">Skip to glasses preview</a>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="./social.html" aria-label="Sideband home"><span class="brand-mark" aria-hidden="true">s<span>))</span></span>sideband<span class="brand-period">.</span></a>
+    <p class="sidebar-caption">A small place for your people.</p>
+    <nav class="primary-nav" aria-label="Social app">
+      <button type="button" data-destination="trending"><span aria-hidden="true">↗</span>Trending<span class="nav-index">01</span></button>
+      <button type="button" data-destination="people"><span aria-hidden="true">◎</span>People<span class="nav-index">02</span></button>
+      <button type="button" data-destination="inbox"><span aria-hidden="true">↔</span>Inbox<span class="nav-index">03</span></button>
+      <button type="button" data-destination="saved"><span aria-hidden="true">⌑</span>Saved<span class="nav-index">04</span></button>
+    </nav>
+    <div class="sidebar-bottom"><div class="wearer"><span class="avatar">Y</span><div><strong>You</strong><span>Demo wearer · G2</span></div></div><p>Fictional people. Local messages.<br/>Nothing is recorded or sent.</p><a id="harness-link" href="./">← Back to the harness</a></div>
+  </aside>
+  <div class="main-column">
+    <header class="topbar"><span>Social, at a glance.</span><div><span class="prototype-label"><i></i>Interactive prototype</span><button id="connect" type="button">Open on G2 <span aria-hidden="true">↗</span></button></div></header>
+    <main id="main">
+      <section class="page-heading"><div><h1>Your people, in view.</h1><p>A passing thought. A quick reply. Keep the conversation close.</p></div><button id="menu" type="button" class="quiet-button">Glasses menu <span aria-hidden="true">≡</span></button></section>
+      <div class="workspace">
+        <section class="display-section" aria-labelledby="view-title">
+          <div class="section-heading"><div><span class="eyebrow">On your glasses</span><h2 id="view-title">Trending</h2></div><span class="display-size">576 × 288</span></div>
+          <div class="lens-stage"><div class="display-bezel"><canvas id="display" width="576" height="288" role="img" aria-label="Current G2 social screen"></canvas></div><div class="lens-caption"><span><i></i>Native text preview</span><span id="line-budget">10 lines maximum</span></div></div>
+          <div class="gesture-controls" aria-label="Simulated glasses gestures"><button id="prev" type="button" aria-label="Scroll up"><span aria-hidden="true">↑</span><span>Scroll up</span></button><button id="next" type="button" aria-label="Scroll down"><span aria-hidden="true">↓</span><span>Scroll down</span></button><button id="select" type="button" class="tap-control"><span aria-hidden="true">○</span><span>Tap to choose</span></button><button id="voice" type="button"><span aria-hidden="true">◉</span><span id="voice-label">Start voice demo</span></button></div>
+          <p class="keyboard-note">Use <kbd>↑</kbd> <kbd>↓</kbd> to scroll and <kbd>Enter</kbd> to tap. Double tap on G2 opens system exit.</p>
+          <div class="current-actions"><div class="actions-heading"><h3>On this screen</h3><span>Tap an option to try it</span></div><div id="screen-actions" class="screen-actions"></div></div>
+          <div class="journey" aria-label="Reply flow"><span data-step="read"><b>01</b> Read</span><i>→</i><span data-step="speak"><b>02</b> Speak</span><i>→</i><span data-step="review"><b>03</b> Review</span><i>→</i><span data-step="send"><b>04</b> Send</span></div>
+        </section>
+        <aside class="detail-panel" aria-label="Preview tools">
+          <div class="detail-title"><span class="eyebrow">Try the conversation</span><h2>Speak a little.<br/> Say something.</h2><p>Choose a person or reply to a post. Your words become a text message, ready for one final look.</p></div>
+          <div class="voice-composer"><label for="transcript">Your demo transcript</label><textarea id="transcript" rows="4" maxlength="480" spellcheck="false">That sounds lovely. Count me in!</textarea><button id="use-transcript" type="button">Review these words <span aria-hidden="true">↗</span></button><p id="voice-hint">Open a reply and start the voice demo first.</p></div>
+          <div class="connection-row"><div><strong>Demo connection</strong><span id="network-label">Online · simulated</span></div><button id="network" type="button" role="switch" aria-checked="true" aria-label="Demo connection online"><span></span></button></div>
+          <div class="design-note"><span class="note-mark" aria-hidden="true">↳</span><p>One thought at a time.<br/><span>Full-width text. No noisy feed. Always review before sending.</span></p></div>
+        </aside>
+      </div>
+      <section class="status-strip" aria-label="Prototype status"><div><i></i><span id="status" role="status">Browser preview · no glasses connected</span></div><button id="reset" type="button">Reset demo ↺</button></section>
+      <details class="screen-text"><summary>Read the current screen as text</summary><pre id="screen-text" aria-live="polite"></pre></details>
+      <footer><span>Designed for Even G2. Runs inside the phone’s Even Hub app.</span><span>Voice & delivery simulated · physical display unverified</span></footer>
+    </main>
+  </div>
+</div>
+<script type="module" src="./social.ts"></script>
+</body></html>

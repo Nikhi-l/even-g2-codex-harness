@@ -44,6 +44,12 @@ npm run demo
 
 Choose a template, edit its JSON and answer, then **Show artifact**. Scroll moves the artifact window. Tap toggles the artifact pane. In the desktop demo, the simulated double tap closes the pane; on a connected G2, double tap opens the system exit dialog. In full-width answer mode, scroll pages the answer. **Clear display** blanks both panes; unexpired artifacts can be selected again through MCP.
 
+## Sideband: a glasses-first social prototype
+
+Open `/social.html` for Trending, People, Inbox, and a voice-to-text reply flow designed around the G2’s ten-line native display. Scroll and tap through the app, review a simulated transcript, and explicitly send a local demo message. Offline drafts, saved posts, blocking, and reporting are included as local interaction designs. No audio is captured and no messages leave the app.
+
+`npm run pack:social -- --offline` builds the isolated `.local/sideband.ehpk` prototype with no permissions or unrelated harness assets. See [social design and architecture](docs/SOCIAL_APP.md) and [submission preparation](docs/SOCIAL_SUBMISSION.md) for scope and outstanding live-service and device requirements.
+
 ## Quiet Surfaces: people, backgrounds and motion
 
 Open `/surfaces.html` to explore ten green-only designs, including two clearly labelled fictional AI portraits, moon and ginkgo backgrounds, contour and star details, and four restrained animation modes. Playback is opt-in, completion-paced and reduced-motion aware. The same four new templates are available in MCP and the main editor. See [the collection and display constraints](docs/QUIET_SURFACES.md) and [asset provenance](docs/QUIET_SURFACES_ASSETS.md).
